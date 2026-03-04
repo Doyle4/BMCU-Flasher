@@ -11,9 +11,13 @@ Cross-platform flasher for BMCU (WCH ISP protocol).
 
 ## Download
 Download prebuilt binaries from Releases:
-- Windows: BMCU-Flasher-windows-x64.zip
-- macOS: BMCU-Flasher-macos.zip
-- Linux: BMCU-Flasher-linux-x64.tar.gz
+- Windows: BMCU-Flasher-windows-x64.zip (and BMCU-Flasher-windows-x86.zip)
+- macOS:
+  - Intel (Catalina 10.15+): BMCU-Flasher-macos-x86_64.zip
+  - Apple Silicon (11.0+): BMCU-Flasher-macos-arm64.zip
+- Linux:
+  - x64: BMCU-Flasher-linux-x64.tar.gz
+  - arm64: BMCU-Flasher-linux-arm64.tar.gz
 
 ## Firmware
 Latest BMCU firmware:
