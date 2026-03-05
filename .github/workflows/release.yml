@@ -62,12 +62,12 @@ jobs:
             out: "BMCU-Flasher-macos-x86_64.zip"
             experimental: false
 
-          - id: macos-x86_64-catalina-try
+          - id: macos-x86_64-legacy-try
             runs_on: macos-15-intel
             python: "3.10"
             arch: x86_64
             macos_deploy: "10.15"
-            out: "BMCU-Flasher-macos-x86_64-10.15.zip"
+            out: "BMCU-Flasher-macos-x86_64-legacy-try.zip"
             experimental: true
 
           - id: macos-arm64
