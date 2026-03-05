@@ -205,14 +205,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, android]
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
       - name: Checkout (for community_builds)
         uses: actions/checkout@v4
         with:
           lfs: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Collect
         shell: bash

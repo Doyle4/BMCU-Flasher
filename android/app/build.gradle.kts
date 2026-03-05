@@ -41,7 +41,7 @@ android {
 
   sourceSets {
     getByName("main") {
-      assets.srcDirs("../../i18n")
+      assets.srcDir("../../i18n")
     }
   }
 }

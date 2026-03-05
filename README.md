@@ -26,8 +26,8 @@ Main builds:
 
 Legacy / experimental / community (older OS, best-effort):
 - Windows legacy (older Windows): BMCU-Flasher-windows-legacy-x64.zip, BMCU-Flasher-windows-legacy-x86.zip
-- macOS Catalina 10.15 (Intel) COMMUNITY build: BMCU-Flasher-catalina-1.2.1.zip (by Doyle4, see community_builds/)
-- macOS x86_64 legacy try (CI build, NOT guaranteed on Catalina): BMCU-Flasher-macos-x86_64-legacy-try.zip
+- macOS Catalina 10.15 (Intel): BMCU-Flasher-catalina-1.2.1.zip (community build by Doyle4, tested on Catalina)
+- macOS legacy try (CI attempt): BMCU-Flasher-macos-x86_64-legacy-try.zip (may not run on Catalina)
 
 ## Android requirements
 - Android 5.0+ (API 21+) (minSdk=21)
