@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: consigliato 9.5cm per A1/A1 mini.\nPer PTFE lungo (P1S/P2S/ecc.) scegli 60-90cm (SOLO usa file AMS_A per retract lunghi).",
   "online_autoload": "Autoload",
   "online_rgb": "LED RGB (colore filamento)",
-  "online_opts_hint": "Autoload: caricamento automatico per DM (2 switch). Per schede 1-switch: autoload tramite tap rapido del buffer.\nLED RGB: la LED del canale corrisponde al colore del filamento. Disabilita se non vuoi luci."
+  "online_opts_hint": "Autoload: caricamento automatico per DM (2 switch). Per schede 1-switch: autoload tramite tap rapido del buffer.\nLED RGB: la LED del canale corrisponde al colore del filamento. Disabilita se non vuoi luci.",
+  
+  "ttl_hint_boot_reset": "TIENI BOOT, TOCCA RESET"
 }

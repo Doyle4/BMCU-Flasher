@@ -17,7 +17,7 @@ if SCRIPT_DIR not in sys.path:
 import bmcu_flasher
 
 APP_NAME = "BMCU Flasher"
-APP_VERSION = "1.2"
+APP_VERSION = "1.2.1"
 
 FW_URL = "https://github.com/jarczakpawel/BMCU-C-PJARCZAK"
 APP_URL = "https://github.com/jarczakpawel/BMCU-Flasher"
@@ -230,10 +230,19 @@ class App(tk.Tk):
         self.pbar = None
         self.tree = None
         self._menu = None
+        self.ent_baud = None
+        self.ent_fast_baud = None
+        self.chk_no_fast = None
+        self._flash_seq = 0
 
         # layout lock (fixes "overlap" glitches on mode switch / rebuild)
         self._layout_busy = False
         self._layout_seq = 0
+        self._ttl_hint_border = None
+        self._ttl_hint_lbl = None
+        self._ttl_hint_on = False
+        self._ttl_hint_state = False
+        self._ttl_hint_job = None
 
         self._style()
         self._build_ui()
@@ -419,18 +428,41 @@ class App(tk.Tk):
         a = self._get_adapter(name)
         _, vid, pid, baud, fast_baud, no_fast = a
 
+        old_vid = (self.var_vid.get() or "").strip()
+        old_pid = (self.var_pid.get() or "").strip()
+        old_baud = (self.var_baud.get() or "").strip()
+        old_fast = (self.var_fast_baud.get() or "").strip()
+        old_no_fast = bool(self.var_no_fast.get())
+
         self.var_adapter.set(a[0])
 
         if vid and pid:
-            self.var_vid.set(f"0x{vid:04x}")
-            self.var_pid.set(f"0x{pid:04x}")
+            new_vid = f"0x{vid:04x}"
+            new_pid = f"0x{pid:04x}"
         else:
-            self.var_vid.set("0x0000")
-            self.var_pid.set("0x0000")
+            new_vid = "0x0000"
+            new_pid = "0x0000"
 
-        self.var_baud.set(str(int(baud)))
-        self.var_fast_baud.set(str(int(fast_baud)))
-        self.var_no_fast.set(bool(no_fast))
+        new_baud = str(int(baud))
+        new_fast = str(int(fast_baud))
+        new_no_fast = bool(no_fast)
+
+        self.var_vid.set(new_vid)
+        self.var_pid.set(new_pid)
+        self.var_baud.set(new_baud)
+        self.var_fast_baud.set(new_fast)
+        self.var_no_fast.set(new_no_fast)
+
+        if self.ent_vid and old_vid != new_vid:
+            self._flash_entry_border(self.ent_vid)
+        if self.ent_pid and old_pid != new_pid:
+            self._flash_entry_border(self.ent_pid)
+        if self.ent_baud and old_baud != new_baud:
+            self._flash_entry_border(self.ent_baud)
+        if self.ent_fast_baud and old_fast != new_fast:
+            self._flash_entry_border(self.ent_fast_baud)
+        if self.chk_no_fast and old_no_fast != new_no_fast:
+            self._flash_checkbutton_fg(self.chk_no_fast)
 
         if save:
             self.cfg["adapter"] = (self.var_adapter.get() or "").strip()
@@ -597,10 +629,16 @@ class App(tk.Tk):
 
         rr = 0
         ttk.Label(opt, text=self.T("baud_label")).grid(row=rr, column=0, sticky="w")
-        self._entry(opt, self.var_baud, width=10).grid(row=rr, column=1, sticky="w", padx=(6, 12))
+        self.ent_baud = self._entry(opt, self.var_baud, width=10)
+        self.ent_baud.grid(row=rr, column=1, sticky="w", padx=(6, 12))
+
         ttk.Label(opt, text=self.T("fast_baud_label")).grid(row=rr, column=2, sticky="w")
-        self._entry(opt, self.var_fast_baud, width=10).grid(row=rr, column=3, sticky="w", padx=(6, 12))
-        ttk.Checkbutton(opt, text=self.T("no_fast"), variable=self.var_no_fast).grid(row=rr, column=4, sticky="w", padx=(0, 12))
+        self.ent_fast_baud = self._entry(opt, self.var_fast_baud, width=10)
+        self.ent_fast_baud.grid(row=rr, column=3, sticky="w", padx=(6, 12))
+
+        self.chk_no_fast = ttk.Checkbutton(opt, text=self.T("no_fast"), variable=self.var_no_fast)
+        self.chk_no_fast.grid(row=rr, column=4, sticky="w", padx=(0, 12))
+
         ttk.Checkbutton(opt, text=self.T("verify"), variable=self.var_verify).grid(row=rr, column=5, sticky="w")
         rr += 1
 
@@ -615,6 +653,24 @@ class App(tk.Tk):
         self.btn_flash.pack(side="left")
         ttk.Button(left, text=self.T("clear_log"), command=self._clear_log).pack(side="left", padx=10)
         ttk.Button(left, text=self.T("copy_log"), command=self._copy_all_log).pack(side="left")
+        
+        self._ttl_hint_border = tk.Frame(act, bg=PB_GREEN)
+        self._ttl_hint_border.grid(row=0, column=3, sticky="e", padx=(12, 12))
+        inner = tk.Frame(self._ttl_hint_border, bg=BG)
+        inner.pack(fill="both", padx=1, pady=1)
+        self._ttl_hint_lbl = tk.Label(
+            inner,
+            text=self.T("ttl_hint_boot_reset"),
+            bg=BG,
+            fg=PB_GREEN,
+            font=("TkDefaultFont", 10, "bold"),
+            width=24,
+            anchor="center",
+            padx=10,
+            pady=6,
+        )
+        self._ttl_hint_lbl.pack()
+        self._ttl_hint_border.grid_remove()
 
         ttk.Button(act, text=self.T("help"), command=self._help).grid(row=0, column=4, sticky="e")
 
@@ -688,6 +744,7 @@ class App(tk.Tk):
             return
         seq = self._layout_begin()
         self._apply_mode_layout(init=False)
+        self._ttl_hint_hide()
         self.after_idle(lambda: self._layout_end(seq, do_refresh=True))
 
     def _on_adapter_selected(self, _ev=None):
@@ -738,6 +795,201 @@ class App(tk.Tk):
         for i in self.tree.get_children():
             self.tree.delete(i)
 
+    def _flash_entry_border(self, w, ms: int = 500):
+        if not w:
+            return
+        try:
+            if not w.winfo_exists():
+                return
+        except Exception:
+            return
+
+        def hex_to_rgb(s: str):
+            s = (s or "").strip()
+            if s.startswith("#"):
+                s = s[1:]
+            if len(s) != 6:
+                return (0, 0, 0)
+            try:
+                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+            except Exception:
+                return (0, 0, 0)
+
+        def rgb_to_hex(r: int, g: int, b: int):
+            r = 0 if r < 0 else (255 if r > 255 else r)
+            g = 0 if g < 0 else (255 if g > 255 else g)
+            b = 0 if b < 0 else (255 if b > 255 else b)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        c0 = PB_GREEN
+        c1 = BORDER
+        r0, g0, b0 = hex_to_rgb(c0)
+        r1, g1, b1 = hex_to_rgb(c1)
+
+        steps = 8
+        step_ms = max(1, int(ms) // steps)
+
+        def step(i: int):
+            try:
+                if not w.winfo_exists():
+                    return
+            except Exception:
+                return
+
+            t = i / float(steps)
+            r = int(r0 + (r1 - r0) * t)
+            g = int(g0 + (g1 - g0) * t)
+            b = int(b0 + (b1 - b0) * t)
+            col = rgb_to_hex(r, g, b)
+            try:
+                w.config(highlightbackground=col, highlightcolor=col)
+            except Exception:
+                return
+
+            if i < steps:
+                self.after(step_ms, lambda: step(i + 1))
+            else:
+                try:
+                    w.config(highlightbackground=BORDER, highlightcolor=BORDER)
+                except Exception:
+                    pass
+
+        step(0)
+
+    def _flash_checkbutton_fg(self, w, ms: int = 500):
+        if not w:
+            return
+        try:
+            if not w.winfo_exists():
+                return
+        except Exception:
+            return
+
+        base_style = (w.cget("style") or "").strip() or "TCheckbutton"
+        self._flash_seq += 1
+        flash_style = f"Flash{self._flash_seq}.TCheckbutton"
+
+        style = ttk.Style(self)
+
+        def hex_to_rgb(s: str):
+            s = (s or "").strip()
+            if s.startswith("#"):
+                s = s[1:]
+            if len(s) != 6:
+                return (0, 0, 0)
+            try:
+                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+            except Exception:
+                return (0, 0, 0)
+
+        def rgb_to_hex(r: int, g: int, b: int):
+            r = 0 if r < 0 else (255 if r > 255 else r)
+            g = 0 if g < 0 else (255 if g > 255 else g)
+            b = 0 if b < 0 else (255 if b > 255 else b)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        c0 = PB_GREEN
+        c1 = FG
+        r0, g0, b0 = hex_to_rgb(c0)
+        r1, g1, b1 = hex_to_rgb(c1)
+
+        steps = 8
+        step_ms = max(1, int(ms) // steps)
+
+        try:
+            w.configure(style=flash_style)
+        except Exception:
+            return
+
+        def step(i: int):
+            try:
+                if not w.winfo_exists():
+                    return
+            except Exception:
+                return
+
+            t = i / float(steps)
+            r = int(r0 + (r1 - r0) * t)
+            g = int(g0 + (g1 - g0) * t)
+            b = int(b0 + (b1 - b0) * t)
+            col = rgb_to_hex(r, g, b)
+
+            try:
+                style.configure(flash_style, foreground=col, background=BG)
+            except Exception:
+                pass
+
+            if i < steps:
+                self.after(step_ms, lambda: step(i + 1))
+            else:
+                try:
+                    w.configure(style=base_style)
+                except Exception:
+                    pass
+
+        step(0)
+
+    def _ttl_hint_show(self):
+        if self.var_mode.get() != "ttl":
+            return
+        if not self._ttl_hint_border:
+            return
+        if self._ttl_hint_on:
+            return
+
+        self._ttl_hint_on = True
+        self._ttl_hint_state = True
+        try:
+            self._ttl_hint_border.grid()
+        except Exception:
+            pass
+
+        if self._ttl_hint_lbl:
+            try:
+                self._ttl_hint_lbl.config(text=self.T("ttl_hint_boot_reset"))
+            except Exception:
+                pass
+
+        if self._ttl_hint_job:
+            try:
+                self.after_cancel(self._ttl_hint_job)
+            except Exception:
+                pass
+        self._ttl_hint_job = self.after(2000, self._ttl_hint_tick)
+
+    def _ttl_hint_hide(self):
+        self._ttl_hint_on = False
+        if self._ttl_hint_job:
+            try:
+                self.after_cancel(self._ttl_hint_job)
+            except Exception:
+                pass
+        self._ttl_hint_job = None
+
+        if self._ttl_hint_border:
+            try:
+                self._ttl_hint_border.grid_remove()
+            except Exception:
+                pass
+
+    def _ttl_hint_tick(self):
+        if not self._ttl_hint_on or not self._ttl_hint_border:
+            return
+
+        self._ttl_hint_state = not self._ttl_hint_state
+
+        try:
+            if self._ttl_hint_state:
+                self._ttl_hint_border.grid()
+                delay = 2000
+            else:
+                self._ttl_hint_border.grid_remove()
+                delay = 500
+        except Exception:
+            delay = 500
+
+        self._ttl_hint_job = self.after(delay, self._ttl_hint_tick)
+
     def _enqueue_log(self, level: str, msg: str):
         ts = time.strftime("%H:%M:%S")
         self.q.put(("log", ts, level, msg))
@@ -758,6 +1010,11 @@ class App(tk.Tk):
                 if ev[0] == "log":
                     _, ts, level, msg = ev
                     tags = ("action",) if level == "ACTION" else ()
+                    if level == "ACTION" and self.var_mode.get() == "ttl":
+                        if "enter bootloader now" in msg:
+                            self._ttl_hint_show()
+                    if "bootloader detected" in msg:
+                        self._ttl_hint_hide()
                     self.tree.insert("", "end", values=(ts, level, msg), tags=tags)
                     kids = self.tree.get_children()
                     if kids:
@@ -768,6 +1025,7 @@ class App(tk.Tk):
                 elif ev[0] == "done":
                     _, ok, msg = ev
                     self.btn_flash.config(state="normal")
+                    self._ttl_hint_hide()
                     if ok:
                         messagebox.showinfo(APP_NAME, self.T("ok"))
                     else:

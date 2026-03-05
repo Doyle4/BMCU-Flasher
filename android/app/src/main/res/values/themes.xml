@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="Theme.BMCUFlasher" parent="Theme.AppCompat.NoActionBar">
+    <item name="colorPrimary">@color/bmcu_bg</item>
+    <item name="colorPrimaryDark">@color/bmcu_bg</item>
+    <item name="colorAccent">@color/bmcu_link</item>
+
+    <item name="android:windowBackground">@color/bmcu_bg</item>
+    <item name="android:colorBackground">@color/bmcu_bg</item>
+    <item name="android:textColorPrimary">@color/bmcu_fg</item>
+    <item name="android:textColorSecondary">@color/bmcu_fg</item>
+
+    <item name="android:statusBarColor">@color/bmcu_bg</item>
+    <item name="android:navigationBarColor">@color/bmcu_bg</item>
+  </style>
+</resources>

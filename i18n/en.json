@@ -88,5 +88,19 @@
   "online_retract_hint": "SOLO: recommend 9.5cm for A1/A1 mini.\nFor long PTFE path (P1S/P2S/etc.) choose 60-90cm (SOLO uses AMS_A files for longer retract).",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (filament color)",
-  "online_opts_hint": "Autoload: automatic loading for DM (2 switches). For 1-switch boards: autoload via quick buffer tap.\nRGB LED: channel LED matches configured filament color. Disable if you do not want lights."
+  "online_opts_hint": "Autoload: automatic loading for DM (2 switches). For 1-switch boards: autoload via quick buffer tap.\nRGB LED: channel LED matches configured filament color. Disable if you do not want lights.",
+
+  "ttl_hint_boot_reset": "HOLD BOOT, TAP RESET",
+
+  "android_title": "BMCU Flasher (Android)",
+  "android_device_label": "USB device:",
+  "android_device_hint": "Only CH340 VID=0x1A86 PID=0x7523",
+  "android_refresh": "Refresh",
+  "android_flash": "Flash",
+  "android_busy": "Busy",
+  "android_no_device": "No CH340 device found. Plug BMCU via USB OTG.",
+  "android_perm_denied": "USB permission denied",
+  "android_open_fail": "Cannot open USB device",
+  "android_probe_fail": "No serial driver for this USB device",
+  "android_done": "OK"
 }

@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: рекомендуется 9.5cm для A1/A1 mini.\nДля длинного PTFE (P1S/P2S/и т.д.) выберите 60-90cm (SOLO использует файлы AMS_A для длинной ретракции).",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (цвет филамента)",
-  "online_opts_hint": "Autoload: автоматическая загрузка для DM (2 переключателя). Для плат 1-switch: autoload через быстрый tap буфера.\nRGB LED: LED канала соответствует заданному цвету филамента. Отключите если не нужны огни."
+  "online_opts_hint": "Autoload: автоматическая загрузка для DM (2 переключателя). Для плат 1-switch: autoload через быстрый tap буфера.\nRGB LED: LED канала соответствует заданному цвету филамента. Отключите если не нужны огни.",
+  
+  "ttl_hint_boot_reset": "ДЕРЖИТЕ BOOT, НАЖМИТЕ RESET"
 }

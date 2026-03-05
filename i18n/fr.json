@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: recommande 9.5cm pour A1/A1 mini.\nPour long PTFE (P1S/P2S/etc.) choisir 60-90cm (SOLO utilise des fichiers AMS_A pour retract long).",
   "online_autoload": "Autoload",
   "online_rgb": "LED RGB (couleur du filament)",
-  "online_opts_hint": "Autoload: chargement automatique pour DM (2 interrupteurs). Pour cartes 1-switch: autoload via tap rapide du buffer.\nLED RGB: la LED du canal correspond a la couleur du filament. Desactiver si vous ne voulez pas de lumieres."
+  "online_opts_hint": "Autoload: chargement automatique pour DM (2 interrupteurs). Pour cartes 1-switch: autoload via tap rapide du buffer.\nLED RGB: la LED du canal correspond a la couleur du filament. Desactiver si vous ne voulez pas de lumieres.",
+  
+  "ttl_hint_boot_reset": "MAINTENEZ BOOT, TOUCHEZ RESET"
 }

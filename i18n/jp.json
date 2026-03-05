@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: A1/A1 miniには9.5cm推奨。\n長いPTFE経路(P1S/P2Sなど)は60-90cmを選択 (SOLOは長いリトラクションでAMS_Aファイルを使用)。",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (フィラメント色)",
-  "online_opts_hint": "Autoload: DM(スイッチ2個)の自動ロード。1-switch基板: バッファのクイックタップでAutoload。\nRGB LED: チャンネルLEDが設定したフィラメント色に一致。不要なら無効化してください。"
+  "online_opts_hint": "Autoload: DM(スイッチ2個)の自動ロード。1-switch基板: バッファのクイックタップでAutoload。\nRGB LED: チャンネルLEDが設定したフィラメント色に一致。不要なら無効化してください。",
+  
+  "ttl_hint_boot_reset": "BOOTを押し続ける, RESETをタップ"
 }

@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: A1/A1 mini icin 9.5cm onerilir.\nUzun PTFE icin (P1S/P2S/vb.) 60-90cm secin (SOLO daha uzun retract icin AMS_A dosyalarini kullanir).",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (filament rengi)",
-  "online_opts_hint": "Autoload: DM (2 switch) icin otomatik yukleme. 1-switch kartlarda: buffer'a hizli dokunus ile autoload.\nRGB LED: kanal LED'i filament rengi ile eslesir. Isik istemiyorsaniz kapatin."
+  "online_opts_hint": "Autoload: DM (2 switch) icin otomatik yukleme. 1-switch kartlarda: buffer'a hizli dokunus ile autoload.\nRGB LED: kanal LED'i filament rengi ile eslesir. Isik istemiyorsaniz kapatin.",
+  
+  "ttl_hint_boot_reset": "BOOT BASILI TUT, RESET DOKUN"
 }

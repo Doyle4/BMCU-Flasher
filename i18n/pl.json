@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: polecane 9.5cm dla A1/A1 mini.\nDla dlugiej rurki PTFE (P1S/P2S/itd.) wybierz 60-90cm (SOLO dla dluzszych retrakcji uzywa plikow AMS_A).",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (kolor filamentu)",
-  "online_opts_hint": "Autoload: automatyczne ladowanie dla DM (2 mikrowylaczniki). Dla plytek 1-switch: autoload przez szybkie tapniecie buforem.\nRGB LED: dioda kanalu dopasowana do koloru filamentu. Wylacz, jesli nie chcesz swiatel."
+  "online_opts_hint": "Autoload: automatyczne ladowanie dla DM (2 mikrowylaczniki). Dla plytek 1-switch: autoload przez szybkie tapniecie buforem.\nRGB LED: dioda kanalu dopasowana do koloru filamentu. Wylacz, jesli nie chcesz swiatel.",
+  
+  "ttl_hint_boot_reset": "TRZYMAJ BOOT, KLIKNIJ RESET"
 }

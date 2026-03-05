@@ -4,10 +4,13 @@ Cross-platform flasher for BMCU (WCH ISP protocol).
 
 ![GUI](gui.jpg)
 
-- OS: Linux / Windows / macOS
-- Modes:
+- OS: Linux / Windows / macOS / Android
+- Modes (desktop):
   - USB (BMCU with CH340 on board, AutoDI)
   - TTL (pin header / external USB-Serial, manual BOOT + RESET)
+- Android:
+  - USB only (CH340 + USB OTG)
+  - Online flash only (no local .bin picker)
 
 ## Download
 Download prebuilt binaries from Releases.
@@ -19,10 +22,18 @@ Main builds:
 - macOS Intel (x86_64): BMCU-Flasher-macos-x86_64.zip
 - Linux x64: BMCU-Flasher-linux-x64.tar.gz
 - Linux arm64: BMCU-Flasher-linux-arm64.tar.gz
+- Android APK: BMCU-Flasher-android.apk
 
-Legacy / experimental (older OS, best-effort):
+Legacy / experimental / community (older OS, best-effort):
 - Windows legacy (older Windows): BMCU-Flasher-windows-legacy-x64.zip, BMCU-Flasher-windows-legacy-x86.zip
-- macOS Catalina try (10.15, Intel): BMCU-Flasher-macos-x86_64-10.15.zip
+- macOS Catalina 10.15 (Intel) COMMUNITY build: BMCU-Flasher-catalina-1.2.1.zip (by Doyle4, see community_builds/)
+- macOS x86_64 legacy try (CI build, NOT guaranteed on Catalina): BMCU-Flasher-macos-x86_64-legacy-try.zip
+
+## Android requirements
+- Android 5.0+ (API 21+) (minSdk=21)
+- USB OTG + USB host mode
+- CH340 (VID=0x1A86 PID=0x7523)
+- Do NOT plug USB or flash while BMCU is connected to the printer
 
 ## Firmware
 Latest BMCU firmware:
@@ -43,6 +54,12 @@ GUI (recommended):
 - Run the app
 - Click "Online" to pick the exact firmware variant (slot / retract / autoload / RGB)
 - Click "Help" inside the app (wiring + BOOT/RESET steps)
+
+Android:
+- Install APK
+- Plug BMCU via USB OTG (CH340)
+- Select firmware options
+- Click "Flash"
 
 CLI (optional):
 - USB (auto port by VID/PID):

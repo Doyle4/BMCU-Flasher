@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: 建议 A1/A1 mini 使用 9.5cm。\nPTFE 路径较长 (P1S/P2S 等) 请选择 60-90cm (SOLO 更长回抽会使用 AMS_A 文件)。",
   "online_autoload": "自动装载",
   "online_rgb": "RGB LED (耗材颜色)",
-  "online_opts_hint": "自动装载: DM (2 个开关) 的自动装载。1-switch 板: 通过快速按压缓冲器触发自动装载。\nRGB LED: 通道 LED 与设置的耗材颜色一致。不需要灯光可关闭。"
+  "online_opts_hint": "自动装载: DM (2 个开关) 的自动装载。1-switch 板: 通过快速按压缓冲器触发自动装载。\nRGB LED: 通道 LED 与设置的耗材颜色一致。不需要灯光可关闭。",
+  
+  "ttl_hint_boot_reset": "按住 BOOT, 点按 RESET"
 }

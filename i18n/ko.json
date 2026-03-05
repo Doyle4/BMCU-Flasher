@@ -88,5 +88,7 @@
   "online_retract_hint": "SOLO: A1/A1 mini에는 9.5cm 권장.\n긴 PTFE 경로(P1S/P2S 등)는 60-90cm 선택 (SOLO는 긴 리트랙션에 AMS_A 파일 사용).",
   "online_autoload": "오토로드",
   "online_rgb": "RGB LED (필라멘트 색상)",
-  "online_opts_hint": "오토로드: DM(스위치 2개) 자동 로딩. 1-switch 보드: 버퍼 빠른 탭으로 오토로드.\nRGB LED: 채널 LED가 설정된 필라멘트 색상과 일치. 불빛이 싫으면 끄세요."
+  "online_opts_hint": "오토로드: DM(스위치 2개) 자동 로딩. 1-switch 보드: 버퍼 빠른 탭으로 오토로드.\nRGB LED: 채널 LED가 설정된 필라멘트 색상과 일치. 불빛이 싫으면 끄세요.",
+  
+  "ttl_hint_boot_reset": "BOOT 누른채 RESET 탭"
 }
