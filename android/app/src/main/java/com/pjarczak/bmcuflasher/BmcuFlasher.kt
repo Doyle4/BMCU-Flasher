@@ -463,7 +463,7 @@ object BmcuFlasher {
       }
       if ((stagePct % 10) == 0 && stagePct != lastLog) {
         lastLog = stagePct
-        l("INFO", "program $stagePct% addr=0x%08x".format((i + 1) * BMCU_CHUNK))
+        l("INFO", "program $stagePct%% addr=0x%08x".format((i + 1) * BMCU_CHUNK))
       }
     }
 
@@ -500,7 +500,7 @@ object BmcuFlasher {
         }
         if ((stagePct % 10) == 0 && stagePct != lastLog) {
           lastLog = stagePct
-          l("INFO", "verify $stagePct% addr=0x%08x".format(addr))
+          l("INFO", "verify $stagePct%% addr=0x%08x".format(addr))
         }
       }
 
