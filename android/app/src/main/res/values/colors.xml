@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <color name="bmcu_bg">#121417</color>
+  <color name="bmcu_ok">#25C25A</color>
   <color name="bmcu_fg">#e6e6e6</color>
   <color name="bmcu_entry_bg">#1b1f24</color>
   <color name="bmcu_border">#2b313a</color>
