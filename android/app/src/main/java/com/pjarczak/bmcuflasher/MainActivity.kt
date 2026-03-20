@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
+import android.view.View
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -37,6 +38,7 @@ class MainActivity : AppCompatActivity() {
   private var permGranted: Boolean? = null
 
   private data class DevItem(val dev: UsbDevice, val label: String)
+  private data class AdapterPreset(val label: String, val vid: Int, val pid: Int, val baud: Int, val fastBaud: Int, val noFast: Boolean)
 
   private val devs = ArrayList<DevItem>()
   private var flashing = false
@@ -46,6 +48,18 @@ class MainActivity : AppCompatActivity() {
 
   private val APP_URL = "https://github.com/jarczakpawel/BMCU-Flasher"
   private val FW_URL = "https://github.com/jarczakpawel/BMCU-C-PJARCZAK"
+
+  private val modeIds = listOf("usb", "ttl")
+  private val forceIds = listOf(FirmwareSelector.FORCE_STD, FirmwareSelector.FORCE_SOFT, FirmwareSelector.FORCE_HF)
+  private val ttlAdapters = listOf(
+    AdapterPreset("CH340/CH341 (WCH)", 0x1A86, 0x7523, 115200, 1_000_000, false),
+    AdapterPreset("CP2102/CP210x (Silabs)", 0x10C4, 0xEA60, 115200, 921_600, false),
+    AdapterPreset("FT232R (FTDI)", 0x0403, 0x6001, 115200, 1_000_000, false),
+    AdapterPreset("PL2303 (Prolific)", 0x067B, 0x2303, 115200, 460_800, false),
+    AdapterPreset("CH9102 (WCH)", 0x1A86, 0x55D4, 115200, 1_000_000, false),
+    AdapterPreset("CH343 (WCH)", 0x1A86, 0x55D3, 115200, 1_000_000, false),
+    AdapterPreset("ALL", 0, 0, 115200, 1_000_000, false)
+  )
 
   private val rx = object : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -67,9 +81,7 @@ class MainActivity : AppCompatActivity() {
           }
         }
         UsbManager.ACTION_USB_DEVICE_DETACHED,
-        UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-          refreshDevices()
-        }
+        UsbManager.ACTION_USB_DEVICE_ATTACHED -> refreshDevices()
       }
     }
   }
@@ -82,30 +94,14 @@ class MainActivity : AppCompatActivity() {
     usb = getSystemService(Context.USB_SERVICE) as UsbManager
     i18n = I18n(this)
 
-    b.txtTitle.text = i18n.t("android_title")
-    b.txtDeviceLabel.text = i18n.t("android_device_label")
-    b.txtDeviceHint.text = i18n.t("android_device_hint")
-    b.btnRefresh.text = i18n.t("android_refresh")
-    b.btnFlash.text = i18n.t("android_flash")
-
-    b.txtWarnTitle.text = i18n.t("warn_title")
-    b.txtWarnText.text = i18n.t("warn_text")
+    applyTexts()
+    setupSelectors()
 
     b.txtLinks.text = "App: $APP_URL\nFirmware: $FW_URL"
     Linkify.addLinks(b.txtLinks, Linkify.WEB_URLS)
     b.txtLinks.movementMethod = LinkMovementMethod.getInstance()
 
-    b.spnForce.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf(FirmwareSelector.FORCE_STD, FirmwareSelector.FORCE_HF))
-    b.spnSlot.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf(FirmwareSelector.SLOT_SOLO, FirmwareSelector.SLOT_A, FirmwareSelector.SLOT_B, FirmwareSelector.SLOT_C, FirmwareSelector.SLOT_D))
-    b.chkAutoload.text = i18n.t("online_autoload")
-    b.chkRgb.text = i18n.t("online_rgb")
-    b.chkNoFast.text = i18n.t("no_fast") + " (compatibility)"
-
     b.txtLog.setText("", android.widget.TextView.BufferType.EDITABLE)
-
-    b.spnSlot.setSelection(0)
-    updateRetracts()
-    b.spnSlot.onItemSelected { updateRetracts() }
 
     b.btnRefresh.setOnClickListener { refreshDevices() }
     b.btnFlash.setOnClickListener { startFlash() }
@@ -117,12 +113,97 @@ class MainActivity : AppCompatActivity() {
     }
     if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rx, f)
 
+    applyModeUi()
     refreshDevices()
   }
 
   override fun onDestroy() {
     try { unregisterReceiver(rx) } catch (_: Throwable) {}
     super.onDestroy()
+  }
+
+  private fun applyTexts() {
+    b.txtTitle.text = i18n.t("android_title")
+    b.txtDeviceLabel.text = i18n.t("android_device_label")
+    b.txtWarnTitle.text = i18n.t("warn_title")
+    b.txtWarnText.text = i18n.t("warn_text")
+    b.txtModeLabel.text = i18n.t("mode_label")
+    b.txtAdapterLabel.text = i18n.t("adapter_label")
+    b.btnRefresh.text = i18n.t("android_refresh")
+    b.btnFlash.text = i18n.t("android_flash")
+    b.txtOnlineTitle.text = i18n.t("online_title")
+    b.txtForceLabel.text = i18n.t("online_force_label")
+    b.txtSlotLabel.text = i18n.t("online_slot_label")
+    b.txtRetractLabel.text = i18n.t("online_retract_label")
+    b.chkAutoload.text = i18n.t("online_autoload")
+    b.chkRgb.text = i18n.t("online_rgb")
+    b.chkNoFast.text = i18n.t("no_fast")
+    b.txtLogTitle.text = i18n.t("android_log_title")
+    b.txtTtlHint.text = i18n.t("ttl_hint_boot_reset")
+    updateDeviceHint()
+    updateForceDesc()
+  }
+
+  private fun setupSelectors() {
+    b.spnMode.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf(i18n.t("mode_usb"), i18n.t("mode_ttl")))
+    b.spnMode.setSelection(0)
+    b.spnMode.onItemSelected {
+      applyModeUi()
+      refreshDevices()
+    }
+
+    b.spnAdapter.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, ttlAdapters.map { it.label })
+    b.spnAdapter.setSelection(0)
+    b.spnAdapter.onItemSelected {
+      applyAdapterPreset()
+      if (currentModeId() == "ttl") refreshDevices()
+    }
+
+    b.spnForce.adapter = ArrayAdapter(
+      this,
+      android.R.layout.simple_spinner_dropdown_item,
+      listOf(i18n.t("online_force_std"), i18n.t("online_force_soft"), i18n.t("online_force_hf"))
+    )
+    b.spnForce.setSelection(0)
+    b.spnForce.onItemSelected { updateForceDesc() }
+
+    b.spnSlot.adapter = ArrayAdapter(
+      this,
+      android.R.layout.simple_spinner_dropdown_item,
+      listOf(FirmwareSelector.SLOT_SOLO, FirmwareSelector.SLOT_A, FirmwareSelector.SLOT_B, FirmwareSelector.SLOT_C, FirmwareSelector.SLOT_D)
+    )
+    b.spnSlot.setSelection(0)
+    updateRetracts()
+    b.spnSlot.onItemSelected { updateRetracts() }
+  }
+
+  private fun currentModeId(): String {
+    val idx = b.spnMode.selectedItemPosition
+    return if (idx in modeIds.indices) modeIds[idx] else "usb"
+  }
+
+  private fun currentForceId(): String {
+    val idx = b.spnForce.selectedItemPosition
+    return if (idx in forceIds.indices) forceIds[idx] else FirmwareSelector.FORCE_STD
+  }
+
+  private fun selectedAdapter(): AdapterPreset {
+    val idx = b.spnAdapter.selectedItemPosition
+    return if (idx in ttlAdapters.indices) ttlAdapters[idx] else ttlAdapters[0]
+  }
+
+  private fun applyAdapterPreset() {
+    val preset = selectedAdapter()
+    b.chkNoFast.isChecked = preset.noFast
+  }
+
+  private fun updateForceDesc() {
+    val desc = when (currentForceId()) {
+      FirmwareSelector.FORCE_SOFT -> i18n.t("online_force_soft_desc")
+      FirmwareSelector.FORCE_HF -> i18n.t("online_force_hf_desc")
+      else -> i18n.t("online_force_std_desc")
+    }
+    b.txtForceDesc.text = desc
   }
 
   private fun updateRetracts() {
@@ -132,16 +213,42 @@ class MainActivity : AppCompatActivity() {
     b.spnRetract.setSelection(0)
   }
 
+  private fun applyModeUi() {
+    val ttl = currentModeId() == "ttl"
+    b.rowAdapter.visibility = if (ttl) View.VISIBLE else View.GONE
+    if (!ttl) showTtlHint(false)
+    updateDeviceHint()
+  }
+
+  private fun updateDeviceHint() {
+    b.txtDeviceHint.text = if (currentModeId() == "ttl") i18n.t("android_device_hint_ttl") else i18n.t("android_device_hint_usb")
+  }
+
   private fun refreshDevices() {
     devs.clear()
+    val prober = UsbSerialProber.getDefaultProber()
+    val mode = currentModeId()
+
     for (d in usb.deviceList.values) {
-      if (d.vendorId == 0x1A86 && d.productId == 0x7523) {
-        devs.add(DevItem(d, "CH340 ${d.deviceName}"))
+      if (mode == "usb") {
+        if (d.vendorId == 0x1A86 && d.productId == 0x7523) {
+          devs.add(DevItem(d, "CH340 ${d.deviceName}"))
+        }
+      } else {
+        if (prober.probeDevice(d) == null) continue
+        val preset = selectedAdapter()
+        if (preset.vid != 0 || preset.pid != 0) {
+          if (d.vendorId != preset.vid || d.productId != preset.pid) continue
+        }
+        val name = d.productName?.takeIf { it.isNotBlank() } ?: d.deviceName
+        val label = "$name (vid=0x%04X pid=0x%04X)".format(d.vendorId, d.productId)
+        devs.add(DevItem(d, label))
       }
     }
-    val labels = devs.map { it.label }
-    b.spnDevice.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, if (labels.isEmpty()) listOf("(none)") else labels)
-    if (labels.isNotEmpty()) b.spnDevice.setSelection(0)
+
+    val labels = if (devs.isEmpty()) listOf("-") else devs.map { it.label }
+    b.spnDevice.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+    if (devs.isNotEmpty()) b.spnDevice.setSelection(0)
   }
 
   private fun log(level: String, msg: String) {
@@ -158,7 +265,16 @@ class MainActivity : AppCompatActivity() {
         val del = LOG_TRIM_CHARS.coerceAtMost(e.length)
         e.delete(0, del)
       }
+
+      if (currentModeId() == "ttl") {
+        if (level == "ACTION" && msg.contains("enter bootloader now")) showTtlHint(true)
+        if (msg.contains("bootloader detected")) showTtlHint(false)
+      }
     }
+  }
+
+  private fun showTtlHint(show: Boolean) {
+    b.txtTtlHint.visibility = if (show && currentModeId() == "ttl") View.VISIBLE else View.GONE
   }
 
   private fun prog(pct: Int) {
@@ -191,7 +307,7 @@ class MainActivity : AppCompatActivity() {
       while (permGranted == null && System.currentTimeMillis() < end) {
         try { lock.wait(200) } catch (_: Throwable) {}
       }
-      val ok = (permGranted == true && permDevId == dev.deviceId)
+      val ok = permGranted == true && permDevId == dev.deviceId
       permGranted = null
       return ok
     }
@@ -214,7 +330,8 @@ class MainActivity : AppCompatActivity() {
 
     val dev = pickDevice()
     if (dev == null) {
-      Toast.makeText(this, i18n.t("android_no_device"), Toast.LENGTH_LONG).show()
+      val msg = if (currentModeId() == "ttl") i18n.t("android_no_device_ttl") else i18n.t("android_no_device_usb")
+      Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
       return
     }
 
@@ -224,17 +341,20 @@ class MainActivity : AppCompatActivity() {
   private fun startFlashImpl(dev: UsbDevice) {
     if (flashing) return
 
-    val force = b.spnForce.selectedItem as String
+    val mode = currentModeId()
+    val force = currentForceId()
     val slot = b.spnSlot.selectedItem as String
     val retract = b.spnRetract.selectedItem as String
     val autoload = b.chkAutoload.isChecked
     val rgb = b.chkRgb.isChecked
-    val noFast = b.chkNoFast.isChecked
+    val preset = if (mode == "ttl") selectedAdapter() else ttlAdapters[0]
+    val noFast = b.chkNoFast.isChecked || preset.noFast
 
     flashing = true
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     b.btnFlash.isEnabled = false
     b.pbar.progress = 0
+    showTtlHint(false)
 
     thread(start = true, isDaemon = true) {
       var conn: android.hardware.usb.UsbDeviceConnection? = null
@@ -258,22 +378,37 @@ class MainActivity : AppCompatActivity() {
         port = driver.ports[0]
 
         port!!.open(conn)
-        port!!.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-        try { port!!.setDTR(true); port!!.setRTS(true) } catch (_: Throwable) {}
+        port!!.setParameters(preset.baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+        if (mode == "usb") {
+          try { port!!.setDTR(true); port!!.setRTS(true) } catch (_: Throwable) {}
+        }
 
         val fwBytes = fwFile.readBytes()
 
-        log("INFO", "open port=${dev.deviceName} mode=usb")
-        BmcuFlasher.flashUsb(
-          port = port!!,
-          firmware = fwBytes,
-          log = ::log,
-          progress = ::prog,
-          baud = 115200,
-          fastBaud = 1_000_000,
-          noFast = noFast,
-          verify = true
-        )
+        log("INFO", "open port=${dev.deviceName} mode=$mode")
+        if (mode == "usb") {
+          BmcuFlasher.flashUsb(
+            port = port!!,
+            firmware = fwBytes,
+            log = ::log,
+            progress = ::prog,
+            baud = preset.baud,
+            fastBaud = preset.fastBaud,
+            noFast = noFast,
+            verify = true
+          )
+        } else {
+          BmcuFlasher.flashTtl(
+            port = port!!,
+            firmware = fwBytes,
+            log = ::log,
+            progress = ::prog,
+            baud = preset.baud,
+            fastBaud = preset.fastBaud,
+            noFast = noFast,
+            verify = true
+          )
+        }
 
         try {
           if (fwFile.isFile) {
@@ -287,12 +422,15 @@ class MainActivity : AppCompatActivity() {
         log("ERROR", e.message ?: e.toString())
         runOnUiThread { Toast.makeText(this, e.message ?: i18n.t("err_generic"), Toast.LENGTH_LONG).show() }
       } finally {
-        try { port?.setDTR(true); port?.setRTS(true) } catch (_: Throwable) {}
+        if (mode == "usb") {
+          try { port?.setDTR(true); port?.setRTS(true) } catch (_: Throwable) {}
+        }
         try { port?.close() } catch (_: Throwable) {}
         try { conn?.close() } catch (_: Throwable) {}
 
         runOnUiThread {
           b.btnFlash.isEnabled = true
+          showTtlHint(false)
           window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         flashing = false
@@ -305,6 +443,7 @@ class MainActivity : AppCompatActivity() {
       override fun onItemSelected(parent: AdapterView<*>, view: android.view.View?, position: Int, id: Long) {
         fn()
       }
+
       override fun onNothingSelected(parent: AdapterView<*>) {}
     }
   }

@@ -1,8 +1,9 @@
 package com.pjarczak.bmcuflasher
 
 object FirmwareSelector {
-  const val FORCE_STD = "Standard (normal load force)"
-  const val FORCE_HF = "High force (stronger load/print pressure)"
+  const val FORCE_STD = "standard"
+  const val FORCE_SOFT = "soft"
+  const val FORCE_HF = "high_force"
 
   const val SLOT_SOLO = "SOLO"
   const val SLOT_A = "AMS_A"
@@ -36,7 +37,11 @@ object FirmwareSelector {
   }
 
   fun build(force: String, slot: String, retractDisp: String, autoload: Boolean, rgb: Boolean): Sel {
-    val modeDir = if (force == FORCE_HF) "high_force_load(P1S)" else "standard(A1)"
+    val modeDir = when (force) {
+      FORCE_SOFT -> "soft_load(A1)"
+      FORCE_HF -> "high_force_load(P1S)"
+      else -> "standard(A1)"
+    }
     val dmDir = if (autoload) "AUTOLOAD" else "NO_AUTOLOAD"
     val rgbDir = if (rgb) "FILAMENT_RGB_ON" else "FILAMENT_RGB_OFF"
 
@@ -60,7 +65,6 @@ object FirmwareSelector {
         retCm = retractDisp
       }
     } else {
-      slotDir = slot
       val s = slot.substringAfter("_").lowercase()
       fileName = "ams_${s}_${retractVal}.bin"
       retCm = retractDisp

@@ -102,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -U pip
-          python -m pip install pyinstaller pyserial
+          python -m pip install pyinstaller pyserial certifi
 
       - name: Build
         shell: bash
@@ -111,7 +111,7 @@ jobs:
           NAME="BMCU Flasher"
 
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            python -m PyInstaller --noconfirm --clean --windowed --name "$NAME" \
+            python -m PyInstaller --noconfirm --clean --windowed --collect-data certifi --name "$NAME" \
               --icon icon.ico \
               --add-data "bmcu320.png;." \
               --add-data "icon.png;." \
@@ -129,7 +129,7 @@ jobs:
               echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
             fi
 
-            python -m PyInstaller --noconfirm --clean --windowed --name "$NAME" \
+            python -m PyInstaller --noconfirm --clean --windowed --collect-data certifi --name "$NAME" \
               --target-architecture "$ARCH" \
               --icon icon.icns \
               --add-data "bmcu320.png:." \
@@ -149,7 +149,7 @@ jobs:
             ditto -c -k --sequesterRsrc --keepParent "dist/$NAME.app" "${{ matrix.out }}"
 
           else
-            python -m PyInstaller --noconfirm --clean --windowed --name "$NAME" \
+            python -m PyInstaller --noconfirm --clean --windowed --collect-data certifi --name "$NAME" \
               --add-data "bmcu320.png:." \
               --add-data "icon.png:." \
               --add-data "i18n:i18n" \

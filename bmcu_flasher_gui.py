@@ -17,7 +17,7 @@ if SCRIPT_DIR not in sys.path:
 import bmcu_flasher
 
 APP_NAME = "BMCU Flasher"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3"
 
 FW_URL = "https://github.com/jarczakpawel/BMCU-C-PJARCZAK"
 APP_URL = "https://github.com/jarczakpawel/BMCU-Flasher"
@@ -36,8 +36,9 @@ PB_GREEN = "#25c25a"
 LINK_FG = "#7fb3ff"
 WARN_RED = "#ff4d4d"
 
-ONLINE_FORCE_STD = "Standard (normal load force)"
-ONLINE_FORCE_HF = "High force (stronger load/print pressure)"
+ONLINE_FORCE_STD = "standard"
+ONLINE_FORCE_SOFT = "soft"
+ONLINE_FORCE_HF = "high_force"
 
 ONLINE_SLOT_SOLO = "SOLO"
 ONLINE_SLOT_A = "AMS_A"
@@ -1187,7 +1188,21 @@ class App(tk.Tk):
 
         tk.Label(root, text=self.T("online_header"), bg=BG, fg=FG, font=("TkDefaultFont", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
+        force_items = [
+            (ONLINE_FORCE_STD, self.T("online_force_std")),
+            (ONLINE_FORCE_SOFT, self.T("online_force_soft")),
+            (ONLINE_FORCE_HF, self.T("online_force_hf")),
+        ]
+        force_label_map = {code: label for code, label in force_items}
+        force_desc_map = {
+            ONLINE_FORCE_STD: self.T("online_force_std_desc"),
+            ONLINE_FORCE_SOFT: self.T("online_force_soft_desc"),
+            ONLINE_FORCE_HF: self.T("online_force_hf_desc"),
+        }
+
         var_force = tk.StringVar(value=ONLINE_FORCE_STD)
+        var_force_disp = tk.StringVar(value=force_label_map[ONLINE_FORCE_STD])
+        var_force_desc = tk.StringVar(value=force_desc_map[ONLINE_FORCE_STD])
         var_slot = tk.StringVar(value=ONLINE_SLOT_SOLO)
         var_retract = tk.StringVar(value="9.5cm")
         var_autoload = tk.BooleanVar(value=True)
@@ -1199,6 +1214,16 @@ class App(tk.Tk):
             inner = tk.Frame(f, bg=BG)
             inner.pack(fill="x", padx=12, pady=(0, 12))
             return f, inner
+
+        def _on_force_change(_ev=None):
+            disp = var_force_disp.get()
+            force = ONLINE_FORCE_STD
+            for code, label in force_items:
+                if label == disp:
+                    force = code
+                    break
+            var_force.set(force)
+            var_force_desc.set(force_desc_map.get(force, ""))
 
         def _retract_values_for_slot(slot: str):
             if slot == ONLINE_SLOT_SOLO:
@@ -1221,7 +1246,9 @@ class App(tk.Tk):
             autoload = bool(var_autoload.get())
             rgb = bool(var_rgb.get())
 
-            if force == ONLINE_FORCE_HF:
+            if force == ONLINE_FORCE_SOFT:
+                mode_dir = "soft_load(A1)"
+            elif force == ONLINE_FORCE_HF:
                 mode_dir = "high_force_load(P1S)"
             else:
                 mode_dir = "standard(A1)"
@@ -1281,10 +1308,25 @@ class App(tk.Tk):
         row += 1
 
         tk.Label(i1, text=self.T("online_force_label"), bg=BG, fg=FG).grid(row=0, column=0, sticky="w")
-        cmb_force = ttk.Combobox(i1, textvariable=var_force, state="readonly", values=[ONLINE_FORCE_STD, ONLINE_FORCE_HF])
+        cmb_force = ttk.Combobox(
+            i1,
+            textvariable=var_force_disp,
+            state="readonly",
+            values=[label for _, label in force_items],
+        )
         cmb_force.grid(row=0, column=1, sticky="we", padx=(10, 0))
+        cmb_force.bind("<<ComboboxSelected>>", _on_force_change)
         i1.columnconfigure(1, weight=1)
-        tk.Label(i1, text=self.T("online_force_hint"), bg=BG, fg=FG, justify="left", wraplength=720).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        tk.Label(
+            i1,
+            textvariable=var_force_desc,
+            bg=BG,
+            fg=FG,
+            justify="left",
+            wraplength=720,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        _on_force_change()
 
         b2, i2 = step_box(root, self.T("online_step2_title"))
         b2.grid(row=row, column=0, sticky="we", pady=(0, 10))
@@ -1318,9 +1360,9 @@ class App(tk.Tk):
         btns.grid(row=row, column=0, sticky="we", pady=(6, 0))
         btns.columnconfigure(0, weight=1)
         tk.Button(btns, text=self.T("cancel"), command=w.destroy, bg=ENTRY_BG, fg=FG, relief="flat",
-                  highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=1, sticky="e")
+                highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=1, sticky="e")
         tk.Button(btns, text=self.T("select"), command=_pick, bg=ENTRY_BG, fg=FG, relief="flat",
-                  highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=2, sticky="e", padx=(10, 0))
+                highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=2, sticky="e", padx=(10, 0))
 
     def _help_link(self, parent, label: str, url: str):
         row = tk.Frame(parent, bg=BG)

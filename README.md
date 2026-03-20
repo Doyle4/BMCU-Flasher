@@ -5,12 +5,14 @@ Cross-platform flasher for BMCU (WCH ISP protocol).
 ![GUI](gui.jpg)
 
 - OS: Linux / Windows / macOS / Android
-- Modes (desktop):
+- Modes:
   - USB (BMCU with CH340 on board, AutoDI)
   - TTL (pin header / external USB-Serial, manual BOOT + RESET)
 - Android:
-  - USB only (CH340 + USB OTG)
+  - USB (CH340 + USB OTG)
+  - TTL (external USB-Serial, manual BOOT + RESET)
   - Online flash only (no local .bin picker)
+  - App language follows system language
 
 ## Download
 Download prebuilt binaries from Releases.
@@ -32,7 +34,8 @@ Legacy / experimental / community (older OS, best-effort):
 ## Android requirements
 - Android 5.0+ (API 21+) (minSdk=21)
 - USB OTG + USB host mode
-- CH340 (VID=0x1A86 PID=0x7523)
+- CH340 supported for USB mode
+- External USB-Serial adapters supported for TTL mode
 - Do NOT plug USB or flash while BMCU is connected to the printer
 
 ## Firmware
@@ -40,7 +43,7 @@ Latest BMCU firmware:
 https://github.com/jarczakpawel/BMCU-C-PJARCZAK
 
 GUI has "Online" firmware selection (no manual searching/downloading):
-- choose mode (Standard / High force)
+- choose mode (Standard / Soft load / High force)
 - choose slot (SOLO / AMS_A / AMS_B / AMS_C / AMS_D)
 - choose retract length, AUTOLOAD, RGB
 - the app downloads the selected firmware and flashes it
@@ -52,12 +55,14 @@ Linux and macOS usually work out-of-the-box.
 ## Usage
 GUI (recommended):
 - Run the app
-- Click "Online" to pick the exact firmware variant (slot / retract / autoload / RGB)
+- Click "Online" to pick the exact firmware variant (mode / slot / retract / autoload / RGB)
 - Click "Help" inside the app (wiring + BOOT/RESET steps)
 
 Android:
 - Install APK
-- Plug BMCU via USB OTG (CH340)
+- Choose USB or TTL mode
+- USB mode: plug BMCU via USB OTG
+- TTL mode: connect external USB-Serial adapter and enter BOOTloader manually
 - Select firmware options
 - Click "Flash"
 

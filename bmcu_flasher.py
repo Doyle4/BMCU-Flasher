@@ -9,6 +9,12 @@ import urllib.request
 import urllib.parse
 import serial
 from serial.tools import list_ports
+import ssl
+
+try:
+    import certifi
+except Exception:
+    certifi = None
 
 MAGIC_REQ = b"\x57\xAB"
 MAGIC_RSP = b"\x55\xAA"
@@ -36,6 +42,23 @@ DEFAULT_PID = 0x7523
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/version"
 REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/manifest.txt"
 REMOTE_FIRMWARE_BASE = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/"
+
+_SSL_CONTEXT = None
+
+def _get_ssl_context():
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is not None:
+        return _SSL_CONTEXT
+
+    if certifi is not None:
+        try:
+            _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+            return _SSL_CONTEXT
+        except Exception:
+            pass
+
+    _SSL_CONTEXT = ssl.create_default_context()
+    return _SSL_CONTEXT
 
 def u16_le(x: int) -> bytes:
     return struct.pack("<H", x & 0xFFFF)
@@ -590,7 +613,7 @@ def flash_firmware(
         plain = fw_pad[addr:addr+BMCU_CHUNK]
         enc = xor_crypt(plain, xor_key)
 
-        code, _ = isp.txrx(build_program(addr, pad_byte, enc), CMD_PROGRAM, 1.8)
+        code, _ = isp.txrx(build_program(addr, pad_byte, enc), CMD_PROGRAM, 5.0)
         if code != 0x00:
             isp.close()
             raise RuntimeError(f"program failed at 0x{addr:08x}")
@@ -609,7 +632,7 @@ def flash_firmware(
 
     flush_addr = blocks * BMCU_CHUNK
     _log(log_cb, "INFO", f"stage program_flush addr=0x{flush_addr:08x} (A5 empty)")
-    code, _ = isp.txrx(build_program(flush_addr, pad_byte, b""), CMD_PROGRAM, 2.2)
+    code, _ = isp.txrx(build_program(flush_addr, pad_byte, b""), CMD_PROGRAM, 5.0)
     if code != 0x00:
         isp.close()
         raise RuntimeError("program_flush failed")
@@ -687,7 +710,7 @@ def flash_firmware(
 
 def _http_get(url: str, timeout_s: float = 20.0) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.2"})
-    with urllib.request.urlopen(req, timeout=timeout_s) as r:
+    with urllib.request.urlopen(req, timeout=timeout_s, context=_get_ssl_context()) as r:
         return r.read()
 
 def remote_get_version(version_url: str = REMOTE_VERSION_URL, timeout_s: float = 12.0) -> str:
@@ -803,7 +826,7 @@ def remote_download_firmware(
 
     req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.2"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as r, open(tmp_path, "wb") as f:
+        with urllib.request.urlopen(req, timeout=timeout_s, context=_get_ssl_context()) as r, open(tmp_path, "wb") as f:
             clen = r.headers.get("Content-Length")
             total = None
             if clen:

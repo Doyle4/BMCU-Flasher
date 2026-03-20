@@ -20,27 +20,20 @@
   "clear_log": "ログをクリア",
   "copy_log": "ログをコピー",
   "help": "ヘルプ",
-
   "warn_title": "警告!",
   "warn_text": "BMCUがプリンターに接続されている間はUSBを挿したり書き込みを行わないでください。BMCUの接続/取り外しは必ずプリンターの電源OFF時に行ってください。プリンターのファームウェア更新はBMCUを外した状態が最も安全です。",
-
   "log_time": "時刻",
   "log_level": "レベル",
   "log_message": "メッセージ",
-
   "menu_copy_selected": "選択をコピー",
   "menu_copy_all": "すべてコピー",
-
   "author_label": "作者: Pawel Jarczak",
-
   "ok": "OK",
   "cancel": "キャンセル",
   "select": "選択",
-
   "dlg_select_bin_title": "ファームウェア .bin を選択",
   "dlg_bin_filter": "バイナリ",
   "dlg_all_filter": "すべて",
-
   "err_generic": "エラー",
   "err_bad_vidpid": "VID/PIDが不正です",
   "err_select_bin": "ファームウェア .bin を選択してください",
@@ -49,46 +42,59 @@
   "err_bad_baud": "ボーレートの値が不正です",
   "err_select_online": "オンラインファームウェアを選択してください",
   "err_bad_retract": "リトラクションの選択が不正です",
-
   "help_usb_title": "USBモード",
   "help_ttl_title": "TTLモード",
   "help_step1": "手順 1:",
   "help_step2": "手順 2:",
   "help_step3": "手順 3:",
-
   "help_usb_s1": "- USBでBMCUを接続",
   "help_usb_s2": "- ポートを選択\n- (VID/PIDはCH340のまま)",
   "help_usb_s3": "- ファームウェアを選択: 参照 = ローカル, オンライン = 最新をダウンロード\n- 書き込みをクリック",
-
   "help_ttl_s1": "- USB-SerialをBMCUに配線\n- bootloaderに入る",
   "help_ttl_s2": "- USB-Serialタイプを選択 (Baud/高速Baudのプリセット)\n- ポートを選択\n- (VID/PIDはポートのフィルタ用のみ)",
   "help_ttl_s3": "- ファームウェアを選択: 参照 = ローカル, オンライン = 最新をダウンロード\n- 書き込みをクリック",
-
   "help_wiring": "配線:",
   "help_tbl_bmcu": "BMCU",
   "help_tbl_usbserial": "USB-Serial",
   "help_bootloader": "Bootloader:",
   "help_boot_steps": "- BOOTを押し続ける\n- RESETをタップ\n- BOOTを放す",
-
   "help_drivers_title": "ドライバー",
   "help_drivers_ch340": "- CH340/CH341ドライバー (WCH):",
   "help_link_fw": "BMCUファームウェア:",
   "help_link_app": "BMCU Flasher:",
-
   "online_title": "オンラインファームウェア",
   "online_header": "ファームウェアを選択 (オンライン)",
   "online_step1_title": "手順 1 - ロード強度",
   "online_step2_title": "手順 2 - スロットとリトラクション",
   "online_step3_title": "手順 3 - オプション",
-
   "online_force_label": "フィラメントのロード強度:",
-  "online_force_hint": "Standard: A1/A1 mini (他機種でも良ければ)\nHigh force: P1S/X1C/P2Sなど (長いPTFE経路 / ロード問題 / 旧型低RPM BMCUギア)\nどちらも動作します - 好みで選択してください。",
+  "online_force_std": "Standard",
+  "online_force_std_desc": "デフォルト推奨。ほとんどのユーザー向けの通常のロード圧です。",
+  "online_force_soft": "Soft load",
+  "online_force_soft_desc": "ロード時の圧力を弱くします。ロード中にギアの擦れ音や軋みが聞こえる場合、BMG レバーのスプリングが弱すぎる可能性があり、このファームウェアを使えます。ただしこの版はフィラメントを弾きやすくなる可能性があるため、デフォルトでは STANDARD を推奨します。",
+  "online_force_hf": "High force",
+  "online_force_hf_desc": "ロード時と印刷時の圧力を強くします。本当により強い力が必要な場合のみ使ってください。",
   "online_slot_label": "BMCUスロット:",
   "online_retract_label": "リトラクション:",
   "online_retract_hint": "SOLO: A1/A1 miniには9.5cm推奨。\n長いPTFE経路(P1S/P2Sなど)は60-90cmを選択 (SOLOは長いリトラクションでAMS_Aファイルを使用)。",
   "online_autoload": "Autoload",
   "online_rgb": "RGB LED (フィラメント色)",
   "online_opts_hint": "Autoload: DM(スイッチ2個)の自動ロード。1-switch基板: バッファのクイックタップでAutoload。\nRGB LED: チャンネルLEDが設定したフィラメント色に一致。不要なら無効化してください。",
-  
-  "ttl_hint_boot_reset": "BOOTを押し続ける, RESETをタップ"
+  "ttl_hint_boot_reset": "BOOTを押し続ける, RESETをタップ",
+  "android_title": "BMCU Flasher (Android)",
+  "android_device_label": "USB デバイス:",
+  "android_device_hint": "CH340 VID=0x1A86 PID=0x7523 のみ",
+  "android_refresh": "更新",
+  "android_flash": "書き込み",
+  "android_busy": "処理中",
+  "android_no_device": "CH340 デバイスが見つかりません。USB OTG で BMCU を接続してください。",
+  "android_perm_denied": "USB 権限が拒否されました",
+  "android_open_fail": "USB デバイスを開けません",
+  "android_probe_fail": "この USB デバイス用のシリアルドライバがありません",
+  "android_done": "OK",
+  "android_device_hint_usb": "CH340 VID=0x1A86 PID=0x7523 のみ",
+  "android_device_hint_ttl": "USB OTG 経由で USB-Serial アダプタを使用してください。選択したアダプタで絞り込むか、ALL を使用してください。",
+  "android_no_device_usb": "CH340 デバイスが見つかりません。BMCU を USB OTG で接続してください。",
+  "android_no_device_ttl": "互換性のある USB-Serial アダプタが見つかりません。アダプタを USB OTG で接続するか、アダプタフィルタを変更してください。",
+  "android_log_title": "ログ"
 }

@@ -55,6 +55,40 @@
       android:text="Do NOT plug USB or flash while BMCU is connected to the printer."
       android:layout_marginTop="4dp"/>
 
+    <TextView
+      android:id="@+id/txtModeLabel"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textColor="@color/bmcu_fg"
+      android:text="Mode:"
+      android:layout_marginTop="12dp"/>
+
+    <Spinner
+      android:id="@+id/spnMode"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"/>
+
+    <LinearLayout
+      android:id="@+id/rowAdapter"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:visibility="gone"
+      android:layout_marginTop="10dp">
+
+      <TextView
+        android:id="@+id/txtAdapterLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bmcu_fg"
+        android:text="USB-Serial:"/>
+
+      <Spinner
+        android:id="@+id/spnAdapter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+    </LinearLayout>
+
     <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
@@ -101,6 +135,7 @@
       android:background="@color/bmcu_divider"/>
 
     <TextView
+      android:id="@+id/txtOnlineTitle"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
@@ -109,6 +144,7 @@
       android:textSize="16sp"/>
 
     <TextView
+      android:id="@+id/txtForceLabel"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
@@ -121,6 +157,14 @@
       android:layout_height="wrap_content"/>
 
     <TextView
+      android:id="@+id/txtForceDesc"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:textColor="@color/bmcu_fg"/>
+
+    <TextView
+      android:id="@+id/txtSlotLabel"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
@@ -133,6 +177,7 @@
       android:layout_height="wrap_content"/>
 
     <TextView
+      android:id="@+id/txtRetractLabel"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
@@ -173,7 +218,7 @@
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
-      android:text="No fast (compatibility)"
+      android:text="No fast"
       android:checked="false"
       android:layout_marginTop="6dp"/>
 
@@ -186,6 +231,19 @@
       android:text="Flash"
       android:layout_marginTop="14dp"/>
 
+    <TextView
+      android:id="@+id/txtTtlHint"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:padding="8dp"
+      android:gravity="center"
+      android:textStyle="bold"
+      android:textColor="@color/bmcu_ok"
+      android:background="@drawable/bmcu_panel"
+      android:text="HOLD BOOT, TAP RESET"
+      android:visibility="gone"/>
+
     <ProgressBar
       android:id="@+id/pbar"
       style="?android:attr/progressBarStyleHorizontal"
@@ -196,6 +254,7 @@
       android:progress="0"/>
 
     <TextView
+      android:id="@+id/txtLogTitle"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
