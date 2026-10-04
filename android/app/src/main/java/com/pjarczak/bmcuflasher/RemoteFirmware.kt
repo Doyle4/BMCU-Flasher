@@ -12,7 +12,9 @@ object RemoteFirmware {
   const val REMOTE_VERSION_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/version"
   const val REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/manifest.txt"
   const val REMOTE_FIRMWARE_BASE = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/"
-  private const val UA = "BMCUFlasher/1.2"
+  const val KLIPPER_VERSION_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-Klipper/refs/heads/main/version"
+  const val KLIPPER_FIRMWARE_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-Klipper/refs/heads/main/firmware/firmware.bin"
+  private const val UA = "BMCUFlasher/1.4"
 
   data class ManEntry(val sha: String, val crc: String, val size: Long)
 
@@ -40,10 +42,22 @@ object RemoteFirmware {
     val major = a.toInt()
     val minorRaw = b.toInt()
     return when {
-      minorRaw == 0 -> "V$major"
+      minorRaw == 0 -> "V$major.0"
       (minorRaw % 10) == 0 -> "V$major.${minorRaw / 10}"
       else -> "V$major.$minorRaw"
     }
+  }
+
+  fun getKlipperVersion(timeoutMs: Int = 12000): String {
+    val txt = httpGet(KLIPPER_VERSION_URL, timeoutMs).toString(Charsets.UTF_8)
+    for (raw in txt.lineSequence()) {
+      val line = raw.trim()
+      if (line.lowercase().startsWith("firmware=")) {
+        val v = line.substringAfter("=").trim()
+        if (v.isNotEmpty()) return if (v.startsWith("v", ignoreCase = true)) v else "V$v"
+      }
+    }
+    throw RuntimeException("Klipper firmware version not found")
   }
 
   fun getManifest(timeoutMs: Int = 20000): Map<String, ManEntry> {
@@ -81,7 +95,7 @@ object RemoteFirmware {
     }
 
     val ver = getVersion()
-    log("INFO", "online: version=$ver")
+    log("INFO", "online: Bambu firmware version=$ver")
 
     val man = getManifest()
     val e = man[relPath] ?: throw RuntimeException("rel_path not in manifest: $relPath")
@@ -104,7 +118,7 @@ object RemoteFirmware {
       }
       val sha = sha256Hex(dig.digest()).lowercase()
       val crc = "%08X".format(crc32.value.toInt())
-      if (sha.lowercase() == e.sha && crc.uppercase() == e.crc && size == e.size) {
+      if (sha == e.sha && crc.uppercase() == e.crc && size == e.size) {
         log("INFO", "online: cache hit (${out.name})")
         prog(100)
         return out to ver
@@ -168,6 +182,62 @@ object RemoteFirmware {
     }
 
     log("INFO", "online: ok size=$size crc=$crc sha=$sha")
+    prog(100)
+    return out to ver
+  }
+
+  fun downloadKlipper(cacheDir: File, log: (String, String) -> Unit, prog: (Int) -> Unit): Pair<File, String> {
+    val ver = getKlipperVersion()
+    log("INFO", "online: Klipper firmware version=$ver")
+    cacheDir.mkdirs()
+    val safe = ver.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    val out = File(cacheDir, "klipper-$safe.bin")
+    val tmp = File(cacheDir, "klipper-$safe.bin.part")
+    if (tmp.isFile) tmp.delete()
+
+    val c = (URL(KLIPPER_FIRMWARE_URL).openConnection() as HttpURLConnection)
+    c.connectTimeout = 30000
+    c.readTimeout = 30000
+    c.requestMethod = "GET"
+    c.setRequestProperty("User-Agent", UA)
+    c.instanceFollowRedirects = true
+    c.connect()
+    val code = c.responseCode
+    if (code !in 200..299) throw RuntimeException("http $code $KLIPPER_FIRMWARE_URL")
+
+    val total = c.getHeaderField("Content-Length")?.toLongOrNull()?.takeIf { it > 0 }
+    val dig = MessageDigest.getInstance("SHA-256")
+    var size = 0L
+    var lastPct = -1
+    c.inputStream.use { ins ->
+      FileOutputStream(tmp).use { fos ->
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+          val n = ins.read(buf)
+          if (n <= 0) break
+          fos.write(buf, 0, n)
+          size += n
+          dig.update(buf, 0, n)
+          if (total != null) {
+            val pct = ((size * 100L) / total).toInt().coerceIn(0, 100)
+            if (pct != lastPct) {
+              lastPct = pct
+              prog(pct)
+            }
+          }
+        }
+      }
+    }
+    if (size <= 0L) {
+      tmp.delete()
+      throw RuntimeException("online: empty Klipper firmware")
+    }
+    if (out.isFile) out.delete()
+    if (!tmp.renameTo(out)) {
+      tmp.delete()
+      throw RuntimeException("online: rename failed")
+    }
+    log("INFO", "online: Klipper firmware ok size=$size sha256=${sha256Hex(dig.digest())}")
     prog(100)
     return out to ver
   }

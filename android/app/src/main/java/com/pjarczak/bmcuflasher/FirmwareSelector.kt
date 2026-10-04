@@ -5,13 +5,14 @@ object FirmwareSelector {
   const val FORCE_SOFT = "soft"
   const val FORCE_HF = "high_force"
 
-  const val SLOT_SOLO = "SOLO"
+  const val SLOT_AUTO = "AMS_AUTO"
   const val SLOT_A = "AMS_A"
   const val SLOT_B = "AMS_B"
   const val SLOT_C = "AMS_C"
   const val SLOT_D = "AMS_D"
 
   val RETRACTS = listOf(
+    "9.5cm" to "0.095f",
     "10cm" to "0.10f",
     "20cm" to "0.20f",
     "25cm" to "0.25f",
@@ -32,8 +33,8 @@ object FirmwareSelector {
 
   data class Sel(val relPath: String, val display: String)
 
-  fun retractValuesForSlot(slot: String): List<String> {
-    return if (slot == SLOT_SOLO) listOf("9.5cm") + RETRACTS.map { it.first } else RETRACTS.map { it.first }
+  fun retractValues(): List<String> {
+    return RETRACTS.map { it.first }
   }
 
   fun build(force: String, slot: String, retractDisp: String, autoload: Boolean, rgb: Boolean): Sel {
@@ -44,34 +45,31 @@ object FirmwareSelector {
     }
     val dmDir = if (autoload) "AUTOLOAD" else "NO_AUTOLOAD"
     val rgbDir = if (rgb) "FILAMENT_RGB_ON" else "FILAMENT_RGB_OFF"
+    val retractVal = RETRACTS.first { it.first == retractDisp }.second
 
-    val retractVal = if (retractDisp == "9.5cm") "0.095f" else RETRACTS.first { it.first == retractDisp }.second
-
-    var slotDir = slot
-    var fileSlot = slot
+    val slotDir: String
+    val fileSlot: String
     val fileName: String
     val retCm: String
 
-    if (slot == SLOT_SOLO) {
-      if (retractVal == "0.095f") {
-        slotDir = "SOLO"
-        fileSlot = "SOLO"
-        fileName = "solo_0.095f.bin"
-        retCm = "9.5cm"
-      } else {
-        slotDir = "AMS_A"
-        fileSlot = "AMS_A"
-        fileName = "ams_a_${retractVal}.bin"
+    when (slot) {
+      SLOT_AUTO -> {
+        slotDir = SLOT_AUTO
+        fileSlot = SLOT_AUTO
+        fileName = "ams_auto_${retractVal}.bin"
         retCm = retractDisp
       }
-    } else {
-      val s = slot.substringAfter("_").lowercase()
-      fileName = "ams_${s}_${retractVal}.bin"
-      retCm = retractDisp
+      else -> {
+        slotDir = slot
+        fileSlot = slot
+        val suffix = slot.substringAfter("_").lowercase()
+        fileName = "ams_${suffix}_${retractVal}.bin"
+        retCm = retractDisp
+      }
     }
 
     val rel = "${modeDir}/${dmDir}/${rgbDir}/${slotDir}/${fileName}"
-    val disp = "[ONLINE] ${fileSlot} RET=${retCm} AUTOLOAD=${if (autoload) "ON" else "OFF"} RGB=${if (rgb) "ON" else "OFF"} (${modeDir})"
+    val disp = "[ONLINE] Bambu ${fileSlot} RET=${retCm} AUTOLOAD=${if (autoload) "ON" else "OFF"} RGB=${if (rgb) "ON" else "OFF"} (${modeDir})"
     return Sel(rel, disp)
   }
 }

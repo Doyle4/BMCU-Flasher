@@ -7,8 +7,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
 import android.view.View
@@ -16,6 +18,7 @@ import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -42,15 +45,28 @@ class MainActivity : AppCompatActivity() {
 
   private val devs = ArrayList<DevItem>()
   private var flashing = false
+  private var localFirmwareUri: Uri? = null
+  private var localFirmwareName: String = ""
 
   private val LOG_MAX_CHARS = 200_000
   private val LOG_TRIM_CHARS = 60_000
 
   private val APP_URL = "https://github.com/jarczakpawel/BMCU-Flasher"
   private val FW_URL = "https://github.com/jarczakpawel/BMCU-C-PJARCZAK"
+  private val KLIPPER_URL = "https://github.com/jarczakpawel/BMCU-Klipper"
 
-  private val modeIds = listOf("usb", "ttl")
+  private val modeIds = listOf("usb", "native_usb", "ttl")
+  private val sourceIds = listOf("online", "local")
+  private val productIds = listOf("bambu", "klipper")
   private val forceIds = listOf(FirmwareSelector.FORCE_STD, FirmwareSelector.FORCE_SOFT, FirmwareSelector.FORCE_HF)
+  private val slotIds = listOf(
+    FirmwareSelector.SLOT_AUTO,
+    FirmwareSelector.SLOT_A,
+    FirmwareSelector.SLOT_B,
+    FirmwareSelector.SLOT_C,
+    FirmwareSelector.SLOT_D
+  )
+
   private val ttlAdapters = listOf(
     AdapterPreset("CH340/CH341 (WCH)", 0x1A86, 0x7523, 115200, 1_000_000, false),
     AdapterPreset("CP2102/CP210x (Silabs)", 0x10C4, 0xEA60, 115200, 921_600, false),
@@ -60,6 +76,17 @@ class MainActivity : AppCompatActivity() {
     AdapterPreset("CH343 (WCH)", 0x1A86, 0x55D3, 115200, 1_000_000, false),
     AdapterPreset("ALL", 0, 0, 115200, 1_000_000, false)
   )
+
+  private val localFirmwarePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) {
+      try {
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Throwable) {}
+      localFirmwareUri = uri
+      localFirmwareName = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "firmware.bin")
+      b.txtLocalFirmware.text = i18n.t("android_local_selected").replace("{name}", localFirmwareName)
+    }
+  }
 
   private val rx = object : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -97,14 +124,14 @@ class MainActivity : AppCompatActivity() {
     applyTexts()
     setupSelectors()
 
-    b.txtLinks.text = "App: $APP_URL\nFirmware: $FW_URL"
+    b.txtLinks.text = "App: $APP_URL\nBambu: $FW_URL\nKlipper: $KLIPPER_URL"
     Linkify.addLinks(b.txtLinks, Linkify.WEB_URLS)
     b.txtLinks.movementMethod = LinkMovementMethod.getInstance()
-
     b.txtLog.setText("", android.widget.TextView.BufferType.EDITABLE)
 
     b.btnRefresh.setOnClickListener { refreshDevices() }
     b.btnFlash.setOnClickListener { startFlash() }
+    b.btnLocalFirmware.setOnClickListener { localFirmwarePicker.launch(arrayOf("application/octet-stream", "application/x-binary", "*/*")) }
 
     val f = IntentFilter().apply {
       addAction(ACTION_USB_PERMISSION)
@@ -114,7 +141,9 @@ class MainActivity : AppCompatActivity() {
     if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rx, f)
 
     applyModeUi()
+    applyFirmwareUi()
     refreshDevices()
+    fetchVersions()
   }
 
   override fun onDestroy() {
@@ -131,7 +160,13 @@ class MainActivity : AppCompatActivity() {
     b.txtAdapterLabel.text = i18n.t("adapter_label")
     b.btnRefresh.text = i18n.t("android_refresh")
     b.btnFlash.text = i18n.t("android_flash")
-    b.txtOnlineTitle.text = i18n.t("online_title")
+    b.txtOnlineTitle.text = i18n.t("android_firmware_title")
+    b.txtFirmwareSourceLabel.text = i18n.t("android_firmware_source_label")
+    b.txtProductLabel.text = i18n.t("android_product_label")
+    b.btnLocalFirmware.text = i18n.t("android_local_select")
+    b.txtLocalFirmware.text = i18n.t("android_local_none")
+    b.txtKlipperInfo.text = i18n.t("android_klipper_desc")
+    b.txtVersions.text = i18n.t("android_versions_loading")
     b.txtForceLabel.text = i18n.t("online_force_label")
     b.txtSlotLabel.text = i18n.t("online_slot_label")
     b.txtRetractLabel.text = i18n.t("online_retract_label")
@@ -145,7 +180,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun setupSelectors() {
-    b.spnMode.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf(i18n.t("mode_usb"), i18n.t("mode_ttl")))
+    b.spnMode.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf(i18n.t("mode_usb"), i18n.t("mode_native_usb"), i18n.t("mode_ttl")))
     b.spnMode.setSelection(0)
     b.spnMode.onItemSelected {
       applyModeUi()
@@ -159,6 +194,18 @@ class MainActivity : AppCompatActivity() {
       if (currentModeId() == "ttl") refreshDevices()
     }
 
+    b.spnFirmwareSource.adapter = ArrayAdapter(
+      this,
+      android.R.layout.simple_spinner_dropdown_item,
+      listOf(i18n.t("android_source_online"), i18n.t("android_source_local"))
+    )
+    b.spnFirmwareSource.setSelection(0)
+    b.spnFirmwareSource.onItemSelected { applyFirmwareUi() }
+
+    b.spnProduct.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Bambu", "Klipper"))
+    b.spnProduct.setSelection(0)
+    b.spnProduct.onItemSelected { applyFirmwareUi() }
+
     b.spnForce.adapter = ArrayAdapter(
       this,
       android.R.layout.simple_spinner_dropdown_item,
@@ -170,22 +217,18 @@ class MainActivity : AppCompatActivity() {
     b.spnSlot.adapter = ArrayAdapter(
       this,
       android.R.layout.simple_spinner_dropdown_item,
-      listOf(FirmwareSelector.SLOT_SOLO, FirmwareSelector.SLOT_A, FirmwareSelector.SLOT_B, FirmwareSelector.SLOT_C, FirmwareSelector.SLOT_D)
+      listOf(i18n.t("online_slot_auto"), FirmwareSelector.SLOT_A, FirmwareSelector.SLOT_B, FirmwareSelector.SLOT_C, FirmwareSelector.SLOT_D)
     )
     b.spnSlot.setSelection(0)
     updateRetracts()
     b.spnSlot.onItemSelected { updateRetracts() }
   }
 
-  private fun currentModeId(): String {
-    val idx = b.spnMode.selectedItemPosition
-    return if (idx in modeIds.indices) modeIds[idx] else "usb"
-  }
-
-  private fun currentForceId(): String {
-    val idx = b.spnForce.selectedItemPosition
-    return if (idx in forceIds.indices) forceIds[idx] else FirmwareSelector.FORCE_STD
-  }
+  private fun currentModeId(): String = modeIds.getOrElse(b.spnMode.selectedItemPosition) { "usb" }
+  private fun currentSourceId(): String = sourceIds.getOrElse(b.spnFirmwareSource.selectedItemPosition) { "online" }
+  private fun currentProductId(): String = productIds.getOrElse(b.spnProduct.selectedItemPosition) { "bambu" }
+  private fun currentForceId(): String = forceIds.getOrElse(b.spnForce.selectedItemPosition) { FirmwareSelector.FORCE_STD }
+  private fun currentSlotId(): String = slotIds.getOrElse(b.spnSlot.selectedItemPosition) { FirmwareSelector.SLOT_AUTO }
 
   private fun selectedAdapter(): AdapterPreset {
     val idx = b.spnAdapter.selectedItemPosition
@@ -207,8 +250,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun updateRetracts() {
-    val slot = b.spnSlot.selectedItem as String
-    val vals = FirmwareSelector.retractValuesForSlot(slot)
+    val vals = FirmwareSelector.retractValues()
     b.spnRetract.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, vals)
     b.spnRetract.setSelection(0)
   }
@@ -220,8 +262,41 @@ class MainActivity : AppCompatActivity() {
     updateDeviceHint()
   }
 
+  private fun applyFirmwareUi() {
+    val online = currentSourceId() == "online"
+    val bambu = currentProductId() == "bambu"
+    b.rowLocalFirmware.visibility = if (online) View.GONE else View.VISIBLE
+    b.rowProduct.visibility = if (online) View.VISIBLE else View.GONE
+    b.rowBambuOptions.visibility = if (online && bambu) View.VISIBLE else View.GONE
+    b.txtKlipperInfo.visibility = if (online && !bambu) View.VISIBLE else View.GONE
+  }
+
   private fun updateDeviceHint() {
-    b.txtDeviceHint.text = if (currentModeId() == "ttl") i18n.t("android_device_hint_ttl") else i18n.t("android_device_hint_usb")
+    b.txtDeviceHint.text = when (currentModeId()) {
+      "ttl" -> i18n.t("android_device_hint_ttl")
+      "native_usb" -> i18n.t("android_device_hint_native_usb")
+      else -> i18n.t("android_device_hint_usb")
+    }
+  }
+
+  private fun fetchVersions() {
+    thread(start = true, isDaemon = true) {
+      val bambu = try { RemoteFirmware.getVersion() } catch (_: Throwable) { "?" }
+      val klipper = try { RemoteFirmware.getKlipperVersion() } catch (_: Throwable) { "?" }
+      runOnUiThread {
+        b.txtVersions.text = i18n.t("android_versions")
+          .replace("{bambu}", bambu)
+          .replace("{klipper}", klipper)
+      }
+    }
+  }
+
+  private fun queryDisplayName(uri: Uri): String? {
+    return try {
+      contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0) else null
+      }
+    } catch (_: Throwable) { null }
   }
 
   private fun refreshDevices() {
@@ -230,19 +305,28 @@ class MainActivity : AppCompatActivity() {
     val mode = currentModeId()
 
     for (d in usb.deviceList.values) {
-      if (mode == "usb") {
-        if (d.vendorId == 0x1A86 && d.productId == 0x7523) {
-          devs.add(DevItem(d, "CH340 ${d.deviceName}"))
+      when (mode) {
+        "usb" -> {
+          if (d.vendorId == 0x1A86 && d.productId == 0x7523) {
+            devs.add(DevItem(d, "CH340 ${d.deviceName}"))
+          }
         }
-      } else {
-        if (prober.probeDevice(d) == null) continue
-        val preset = selectedAdapter()
-        if (preset.vid != 0 || preset.pid != 0) {
-          if (d.vendorId != preset.vid || d.productId != preset.pid) continue
+        "native_usb" -> {
+          if ((d.vendorId == 0x4348 || d.vendorId == 0x1A86) && d.productId == 0x55E0) {
+            val name = d.productName?.takeIf { it.isNotBlank() } ?: "WCH ISP"
+            devs.add(DevItem(d, "$name ${d.deviceName} (vid=0x%04X pid=0x%04X)".format(d.vendorId, d.productId)))
+          }
         }
-        val name = d.productName?.takeIf { it.isNotBlank() } ?: d.deviceName
-        val label = "$name (vid=0x%04X pid=0x%04X)".format(d.vendorId, d.productId)
-        devs.add(DevItem(d, label))
+        else -> {
+          if (prober.probeDevice(d) == null) continue
+          val preset = selectedAdapter()
+          if (preset.vid != 0 || preset.pid != 0) {
+            if (d.vendorId != preset.vid || d.productId != preset.pid) continue
+          }
+          val name = d.productName?.takeIf { it.isNotBlank() } ?: d.deviceName
+          val label = "$name (vid=0x%04X pid=0x%04X)".format(d.vendorId, d.productId)
+          devs.add(DevItem(d, label))
+        }
       }
     }
 
@@ -314,9 +398,10 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun confirmSafety(onOk: () -> Unit) {
+    val msg = if (currentModeId() == "native_usb") i18n.t("android_native_safety") else i18n.t("warn_text")
     AlertDialog.Builder(this)
       .setTitle(i18n.t("warn_title"))
-      .setMessage(i18n.t("warn_text"))
+      .setMessage(msg)
       .setPositiveButton(i18n.t("ok")) { _d, _w -> onOk() }
       .setNegativeButton(i18n.t("cancel")) { _d, _w -> }
       .show()
@@ -328,9 +413,25 @@ class MainActivity : AppCompatActivity() {
       return
     }
 
+    if (currentSourceId() == "local") {
+      val uri = localFirmwareUri
+      if (uri == null) {
+        Toast.makeText(this, i18n.t("err_select_bin"), Toast.LENGTH_LONG).show()
+        return
+      }
+      if (localFirmwareName.isNotBlank() && !localFirmwareName.lowercase().endsWith(".bin")) {
+        Toast.makeText(this, i18n.t("err_bin_ext"), Toast.LENGTH_LONG).show()
+        return
+      }
+    }
+
     val dev = pickDevice()
     if (dev == null) {
-      val msg = if (currentModeId() == "ttl") i18n.t("android_no_device_ttl") else i18n.t("android_no_device_usb")
+      val msg = when (currentModeId()) {
+        "ttl" -> i18n.t("android_no_device_ttl")
+        "native_usb" -> i18n.t("android_no_device_native_usb")
+        else -> i18n.t("android_no_device_usb")
+      }
       Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
       return
     }
@@ -338,17 +439,35 @@ class MainActivity : AppCompatActivity() {
     confirmSafety { startFlashImpl(dev) }
   }
 
+  private fun openNativeTransport(): BmcuFlasher.NativeUsbTransport? {
+    val dev = usb.deviceList.values.firstOrNull {
+      (it.vendorId == 0x4348 || it.vendorId == 0x1A86) && it.productId == 0x55E0
+    } ?: return null
+    if (!ensurePermission(dev)) throw RuntimeException(i18n.t("android_perm_denied"))
+    val conn = usb.openDevice(dev) ?: throw RuntimeException(i18n.t("android_open_fail"))
+    return try {
+      BmcuFlasher.NativeUsbTransport(dev, conn)
+    } catch (e: Throwable) {
+      try { conn.close() } catch (_: Throwable) {}
+      throw e
+    }
+  }
+
   private fun startFlashImpl(dev: UsbDevice) {
     if (flashing) return
 
     val mode = currentModeId()
+    val source = currentSourceId()
+    val product = currentProductId()
     val force = currentForceId()
-    val slot = b.spnSlot.selectedItem as String
-    val retract = b.spnRetract.selectedItem as String
+    val slot = currentSlotId()
+    val retract = b.spnRetract.selectedItem as? String ?: "9.5cm"
     val autoload = b.chkAutoload.isChecked
     val rgb = b.chkRgb.isChecked
     val preset = if (mode == "ttl") selectedAdapter() else ttlAdapters[0]
     val noFast = b.chkNoFast.isChecked || preset.noFast
+    val localUri = localFirmwareUri
+    val localName = localFirmwareName
 
     flashing = true
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -359,61 +478,87 @@ class MainActivity : AppCompatActivity() {
     thread(start = true, isDaemon = true) {
       var conn: android.hardware.usb.UsbDeviceConnection? = null
       var port: UsbSerialPort? = null
+      var onlineFile: File? = null
 
       try {
         if (!ensurePermission(dev)) throw RuntimeException(i18n.t("android_perm_denied"))
 
-        val sel = FirmwareSelector.build(force, slot, retract, autoload, rgb)
-        log("INFO", "online: selected ${sel.relPath}")
-        prog(0)
-
-        val fwCache = File(cacheDir, "firmwares")
-        val (fwFile, ver) = RemoteFirmware.download(sel.relPath, fwCache, ::log) { p -> prog(p) }
-        log("INFO", "online: using $ver (${fwFile.name})")
-        prog(0)
-
-        val prober = UsbSerialProber.getDefaultProber()
-        val driver = prober.probeDevice(dev) ?: throw RuntimeException(i18n.t("android_probe_fail"))
-        conn = usb.openDevice(dev) ?: throw RuntimeException(i18n.t("android_open_fail"))
-        port = driver.ports[0]
-
-        port!!.open(conn)
-        port!!.setParameters(preset.baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-        if (mode == "usb") {
-          try { port!!.setDTR(true); port!!.setRTS(true) } catch (_: Throwable) {}
+        val fwBytes: ByteArray = if (source == "local") {
+          val uri = localUri ?: throw RuntimeException(i18n.t("err_select_bin"))
+          log("INFO", "local: selected ${localName.ifBlank { uri.toString() }}")
+          contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw RuntimeException(i18n.t("err_select_bin"))
+        } else {
+          val fwCache = File(cacheDir, "firmwares")
+          val pair = if (product == "klipper") {
+            log("INFO", "online: selected Klipper firmware")
+            RemoteFirmware.downloadKlipper(fwCache, ::log) { p -> prog(p) }
+          } else {
+            val sel = FirmwareSelector.build(force, slot, retract, autoload, rgb)
+            log("INFO", "online: selected Bambu ${sel.relPath}")
+            RemoteFirmware.download(sel.relPath, fwCache, ::log) { p -> prog(p) }
+          }
+          onlineFile = pair.first
+          log("INFO", "online: using ${pair.second} (${pair.first.name})")
+          prog(0)
+          pair.first.readBytes()
         }
 
-        val fwBytes = fwFile.readBytes()
+        if (fwBytes.isEmpty()) throw RuntimeException("firmware file is empty")
 
-        log("INFO", "open port=${dev.deviceName} mode=$mode")
-        if (mode == "usb") {
-          BmcuFlasher.flashUsb(
-            port = port!!,
+        if (mode == "native_usb") {
+          log("INFO", "open native USB mode")
+          BmcuFlasher.flashNativeUsb(
             firmware = fwBytes,
             log = ::log,
             progress = ::prog,
-            baud = preset.baud,
-            fastBaud = preset.fastBaud,
-            noFast = noFast,
+            openTransport = { openNativeTransport() },
             verify = true
           )
         } else {
-          BmcuFlasher.flashTtl(
-            port = port!!,
-            firmware = fwBytes,
-            log = ::log,
-            progress = ::prog,
-            baud = preset.baud,
-            fastBaud = preset.fastBaud,
-            noFast = noFast,
-            verify = true
-          )
+          val prober = UsbSerialProber.getDefaultProber()
+          val driver = prober.probeDevice(dev) ?: throw RuntimeException(i18n.t("android_probe_fail"))
+          conn = usb.openDevice(dev) ?: throw RuntimeException(i18n.t("android_open_fail"))
+          port = driver.ports[0]
+
+          port!!.open(conn)
+          port!!.setParameters(preset.baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+          if (mode == "usb") {
+            try { port!!.setDTR(true); port!!.setRTS(true) } catch (_: Throwable) {}
+          }
+
+          log("INFO", "open port=${dev.deviceName} mode=$mode")
+          if (mode == "usb") {
+            BmcuFlasher.flashUsb(
+              port = port!!,
+              firmware = fwBytes,
+              log = ::log,
+              progress = ::prog,
+              baud = preset.baud,
+              fastBaud = preset.fastBaud,
+              noFast = noFast,
+              verify = true
+            )
+          } else {
+            BmcuFlasher.flashTtl(
+              port = port!!,
+              firmware = fwBytes,
+              log = ::log,
+              progress = ::prog,
+              baud = preset.baud,
+              fastBaud = preset.fastBaud,
+              noFast = noFast,
+              verify = true
+            )
+          }
         }
 
         try {
-          if (fwFile.isFile) {
-            fwFile.delete()
-            log("INFO", "online: cache removed (${fwFile.name})")
+          onlineFile?.let {
+            if (it.isFile) {
+              it.delete()
+              log("INFO", "online: cache removed (${it.name})")
+            }
           }
         } catch (_: Throwable) {}
 

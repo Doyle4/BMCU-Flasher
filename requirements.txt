@@ -1,0 +1,5 @@
+pyinstaller
+pyserial
+certifi
+pyusb
+libusb-package

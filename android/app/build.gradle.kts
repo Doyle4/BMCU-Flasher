@@ -1,10 +1,5 @@
 plugins {
   id("com.android.application")
-  id("org.jetbrains.kotlin.android") apply false
-}
-
-if (extensions.findByName("kotlin") == null) {
-  apply(plugin = "org.jetbrains.kotlin.android")
 }
 
 android {
@@ -15,8 +10,8 @@ android {
     applicationId = "com.pjarczak.bmcuflasher"
     minSdk = 21
     targetSdk = 35
-    versionCode = 130
-    versionName = "1.3"
+    versionCode = 140
+    versionName = "1.4"
   }
 
   buildTypes {

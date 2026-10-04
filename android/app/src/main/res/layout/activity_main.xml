@@ -135,82 +135,166 @@
       android:background="@color/bmcu_divider"/>
 
     <TextView
+      android:id="@+id/txtVersions"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textColor="@color/bmcu_ok"
+      android:textStyle="bold"
+      android:text="Bambu: ... | Klipper: ..."/>
+
+    <TextView
       android:id="@+id/txtOnlineTitle"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
-      android:text="Online firmware"
+      android:text="Firmware"
       android:textStyle="bold"
-      android:textSize="16sp"/>
+      android:textSize="16sp"
+      android:layout_marginTop="8dp"/>
 
     <TextView
-      android:id="@+id/txtForceLabel"
+      android:id="@+id/txtFirmwareSourceLabel"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:textColor="@color/bmcu_fg"
-      android:text="Filament load force:"
+      android:text="Firmware source:"
       android:layout_marginTop="10dp"/>
 
     <Spinner
-      android:id="@+id/spnForce"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"/>
-
-    <TextView
-      android:id="@+id/txtForceDesc"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="6dp"
-      android:textColor="@color/bmcu_fg"/>
-
-    <TextView
-      android:id="@+id/txtSlotLabel"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:textColor="@color/bmcu_fg"
-      android:text="BMCU slot:"
-      android:layout_marginTop="10dp"/>
-
-    <Spinner
-      android:id="@+id/spnSlot"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"/>
-
-    <TextView
-      android:id="@+id/txtRetractLabel"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:textColor="@color/bmcu_fg"
-      android:text="Retraction:"
-      android:layout_marginTop="10dp"/>
-
-    <Spinner
-      android:id="@+id/spnRetract"
+      android:id="@+id/spnFirmwareSource"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"/>
 
     <LinearLayout
+      android:id="@+id/rowLocalFirmware"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:orientation="horizontal"
-      android:layout_marginTop="10dp">
+      android:orientation="vertical"
+      android:visibility="gone"
+      android:layout_marginTop="8dp">
 
-      <CheckBox
-        android:id="@+id/chkAutoload"
-        android:layout_width="wrap_content"
+      <Button
+        android:id="@+id/btnLocalFirmware"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/bmcu_fg"
-        android:text="Autoload"
-        android:checked="true"/>
+        android:background="@drawable/bmcu_button"
+        android:text="Select .bin file"/>
 
-      <CheckBox
-        android:id="@+id/chkRgb"
-        android:layout_width="wrap_content"
+      <TextView
+        android:id="@+id/txtLocalFirmware"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/bmcu_fg"
-        android:text="RGB LED (filament color)"
-        android:layout_marginStart="16dp"
-        android:checked="true"/>
+        android:text="No local firmware selected"
+        android:layout_marginTop="6dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/rowProduct"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:layout_marginTop="8dp">
+
+      <TextView
+        android:id="@+id/txtProductLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bmcu_fg"
+        android:text="Target:"/>
+
+      <Spinner
+        android:id="@+id/spnProduct"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/txtKlipperInfo"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textColor="@color/bmcu_fg"
+      android:background="@drawable/bmcu_panel"
+      android:padding="10dp"
+      android:visibility="gone"
+      android:layout_marginTop="10dp"/>
+
+    <LinearLayout
+      android:id="@+id/rowBambuOptions"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/txtForceLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bmcu_fg"
+        android:text="Filament load force:"
+        android:layout_marginTop="10dp"/>
+
+      <Spinner
+        android:id="@+id/spnForce"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+      <TextView
+        android:id="@+id/txtForceDesc"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="@color/bmcu_fg"/>
+
+      <TextView
+        android:id="@+id/txtSlotLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bmcu_fg"
+        android:text="BMCU slot:"
+        android:layout_marginTop="10dp"/>
+
+      <Spinner
+        android:id="@+id/spnSlot"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+      <TextView
+        android:id="@+id/txtRetractLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bmcu_fg"
+        android:text="Retraction:"
+        android:layout_marginTop="10dp"/>
+
+      <Spinner
+        android:id="@+id/spnRetract"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="10dp">
+
+        <CheckBox
+          android:id="@+id/chkAutoload"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textColor="@color/bmcu_fg"
+          android:text="Autoload"
+          android:checked="true"/>
+
+        <CheckBox
+          android:id="@+id/chkRgb"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textColor="@color/bmcu_fg"
+          android:text="RGB LED (filament color)"
+          android:layout_marginStart="16dp"
+          android:checked="true"/>
+      </LinearLayout>
     </LinearLayout>
 
     <CheckBox
@@ -241,7 +325,7 @@
       android:textStyle="bold"
       android:textColor="@color/bmcu_ok"
       android:background="@drawable/bmcu_panel"
-      android:text="HOLD BOOT, TAP RESET"
+      android:text="HOLD BOOT -> CONNECT USB -> RELEASE WHEN BMCU LED LIGHTS"
       android:visibility="gone"/>
 
     <ProgressBar

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
+import ctypes
 import os
 import struct
+import sys
 import time
 import hashlib
 import zlib
@@ -42,6 +44,9 @@ DEFAULT_PID = 0x7523
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/version"
 REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/manifest.txt"
 REMOTE_FIRMWARE_BASE = "https://raw.githubusercontent.com/jarczakpawel/BMCU-C-PJARCZAK/refs/heads/main/firmwares/"
+
+KLIPPER_VERSION_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-Klipper/refs/heads/main/version"
+KLIPPER_FIRMWARE_URL = "https://raw.githubusercontent.com/jarczakpawel/BMCU-Klipper/refs/heads/main/firmware/firmware.bin"
 
 _SSL_CONTEXT = None
 
@@ -224,6 +229,223 @@ class WchIsp:
         self.ser.write(pkt)
         return self.recv(expect_cmd, timeout_s)
 
+
+# Native USB transport for the CH32V203 built-in WCH ISP bootloader.
+# The device normally enumerates as 4348:55E0 or 1A86:55E0.
+USB_ISP_VIDS = (0x4348, 0x1A86)
+USB_ISP_PID = 0x55E0
+
+
+class _Ch375DevDescr(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("bLength", ctypes.c_uint8), ("bDescriptorType", ctypes.c_uint8),
+        ("bcdUSB", ctypes.c_uint16), ("bDeviceClass", ctypes.c_uint8),
+        ("bDeviceSubClass", ctypes.c_uint8), ("bDeviceProtocol", ctypes.c_uint8),
+        ("bMaxPacketSize0", ctypes.c_uint8), ("idVendor", ctypes.c_uint16),
+        ("idProduct", ctypes.c_uint16), ("bcdDevice", ctypes.c_uint16),
+        ("iManufacturer", ctypes.c_uint8), ("iProduct", ctypes.c_uint8),
+        ("iSerialNumber", ctypes.c_uint8), ("bNumConfigurations", ctypes.c_uint8),
+    ]
+
+
+def _ch375_dll():
+    if os.name != "nt":
+        return None
+    dll = None
+    try:
+        dll = ctypes.WinDLL("CH375DLL64.dll")
+    except OSError:
+        base = getattr(sys, "_MEIPASS", "") or os.path.dirname(os.path.abspath(__file__))
+        try:
+            dll = ctypes.WinDLL(os.path.join(base, "CH375DLL64.dll"))
+        except OSError:
+            dll = None
+    if dll is None:
+        return None
+    try:
+        dll.CH375GetVersion.restype = ctypes.c_uint32
+        dll.CH375GetVersion()
+        dll.CH375OpenDevice.argtypes = [ctypes.c_uint32]
+        dll.CH375OpenDevice.restype = ctypes.c_uint32
+        dll.CH375CloseDevice.argtypes = [ctypes.c_uint32]
+        dll.CH375GetDeviceDescr.argtypes = [
+            ctypes.c_uint32, ctypes.POINTER(_Ch375DevDescr), ctypes.POINTER(ctypes.c_uint32),
+        ]
+        dll.CH375GetDeviceDescr.restype = ctypes.c_bool
+        dll.CH375WriteData.argtypes = [ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        dll.CH375WriteData.restype = ctypes.c_bool
+        dll.CH375ReadData.argtypes = [ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        dll.CH375ReadData.restype = ctypes.c_bool
+        return dll
+    except Exception:
+        return None
+
+
+def _ch375_find_isp(dll):
+    invalid = 0xFFFFFFFF
+    for i in range(8):
+        try:
+            h = dll.CH375OpenDevice(i)
+            if h == invalid:
+                continue
+            d = _Ch375DevDescr()
+            ln = ctypes.c_uint32(ctypes.sizeof(_Ch375DevDescr))
+            dll.CH375GetDeviceDescr(i, ctypes.byref(d), ctypes.byref(ln))
+            if d.idVendor in USB_ISP_VIDS and d.idProduct == USB_ISP_PID:
+                return i
+        except Exception:
+            continue
+        finally:
+            try:
+                dll.CH375CloseDevice(i)
+            except Exception:
+                pass
+    return None
+
+
+def list_usb_isp_devices():
+    out = []
+    dll = _ch375_dll()
+    if dll is not None:
+        idx = _ch375_find_isp(dll)
+        if idx is not None:
+            out.append(f"WCH ISP ch375#{idx} (4348:55E0)")
+    try:
+        import usb.core  # type: ignore
+        for vid in USB_ISP_VIDS:
+            dev = usb.core.find(idVendor=vid, idProduct=USB_ISP_PID)
+            if dev is not None:
+                out.append(f"WCH ISP USB (bus {dev.bus} addr {dev.address}) {vid:04x}:{USB_ISP_PID:04x}")
+                break
+    except Exception:
+        pass
+    return out
+
+
+class WchIspUsb:
+    def __init__(self, trace: bool = False):
+        self.trace = trace
+        self.baud = 115200
+        self._dll = None
+        self._idx = None
+        self._dev = None
+        self._ep_out = None
+        self._ep_in = None
+
+    def open(self):
+        dll = _ch375_dll()
+        if dll is not None:
+            idx = _ch375_find_isp(dll)
+            if idx is not None:
+                h = dll.CH375OpenDevice(idx)
+                if h != 0xFFFFFFFF:
+                    self._dll = dll
+                    self._idx = idx
+                    return
+        try:
+            import usb.core  # type: ignore
+            import usb.util  # type: ignore
+            dev = None
+            for vid in USB_ISP_VIDS:
+                dev = usb.core.find(idVendor=vid, idProduct=USB_ISP_PID)
+                if dev is not None:
+                    break
+            if dev is not None:
+                dev.set_configuration()
+                intf = dev.get_active_configuration()[(0, 0)]
+                ep_out = usb.util.find_descriptor(
+                    intf,
+                    custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT,
+                )
+                ep_in = usb.util.find_descriptor(
+                    intf,
+                    custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN,
+                )
+                if ep_out is not None and ep_in is not None:
+                    self._dev = dev
+                    self._ep_out = ep_out
+                    self._ep_in = ep_in
+                    return
+        except Exception:
+            pass
+        raise RuntimeError(
+            "native_usb: no WCH ISP device (4348:55E0). "
+            "Disconnect 24V and connect the native USB port. "
+            "On Windows use the WCH CH375 driver or WinUSB via Zadig."
+        )
+
+    def close(self):
+        if self._idx is not None and self._dll is not None:
+            try:
+                self._dll.CH375CloseDevice(self._idx)
+            except Exception:
+                pass
+        if self._dev is not None:
+            try:
+                import usb.util  # type: ignore
+                usb.util.dispose_resources(self._dev)
+            except Exception:
+                pass
+        self._dll = None
+        self._idx = None
+        self._dev = None
+        self._ep_out = None
+        self._ep_in = None
+
+    def flush(self):
+        pass
+
+    def set_baud(self, baud: int):
+        self.baud = baud
+
+    def txrx(self, pkt: bytes, expect_cmd: int, timeout_s: float):
+        # Native USB uses the WCH ISP frame without the serial magic bytes/checksum.
+        raw_tx = pkt[2:-1]
+        if self.trace:
+            print(f"TX {raw_tx.hex()}")
+        raw_rx = self._write_read(raw_tx, timeout_s)
+        if len(raw_rx) < 4:
+            raise TimeoutError(f"short USB response ({len(raw_rx)}B)")
+        cmd, code = raw_rx[0], raw_rx[1]
+        ln = raw_rx[2] | (raw_rx[3] << 8)
+        data = raw_rx[4:4 + ln]
+        if self.trace:
+            print(f"RX cmd=0x{cmd:02x} code=0x{code:02x} ln={ln} data={data.hex()}")
+        if cmd != expect_cmd:
+            raise RuntimeError(f"usb cmd mismatch: got 0x{cmd:02x}, want 0x{expect_cmd:02x}")
+        return code, data
+
+    def _write_read(self, raw_tx: bytes, timeout_s: float):
+        end = time.monotonic() + timeout_s
+        if self._dll is not None and self._idx is not None:
+            wlen = ctypes.c_uint32(len(raw_tx))
+            buf = ctypes.create_string_buffer(raw_tx)
+            if not self._dll.CH375WriteData(self._idx, buf, ctypes.byref(wlen)):
+                raise RuntimeError("CH375WriteData failed")
+            rbuf = ctypes.create_string_buffer(64)
+            while True:
+                rlen = ctypes.c_uint32(64)
+                ok = self._dll.CH375ReadData(self._idx, rbuf, ctypes.byref(rlen))
+                if ok and rlen.value > 0:
+                    return rbuf.raw[:rlen.value]
+                if time.monotonic() >= end:
+                    raise TimeoutError(f"usb read timeout after {timeout_s:.1f}s")
+                time.sleep(0.005)
+        if self._dev is not None:
+            import usb.core  # type: ignore
+            self._ep_out.write(raw_tx, timeout=max(100, int(timeout_s * 1000)))
+            while True:
+                remain = end - time.monotonic()
+                if remain <= 0:
+                    raise TimeoutError(f"usb read timeout after {timeout_s:.1f}s")
+                try:
+                    r = self._ep_in.read(64, timeout=max(1, int(min(remain, 1.0) * 1000)))
+                    return bytes(r)
+                except usb.core.USBTimeoutError:
+                    continue
+        raise RuntimeError("usb transport not open")
+
 def set_lines(isp: WchIsp, boot_is_dtr: bool, boot_val: bool, reset_val: bool):
     if boot_is_dtr:
         isp.ser.dtr = boot_val
@@ -284,7 +506,10 @@ def _log(log_cb, level: str, msg: str):
     if log_cb:
         log_cb(level, msg)
 
-def flash_firmware(
+class FastBaudFallback(RuntimeError):
+    pass
+
+def _flash_firmware_once(
     firmware_path: str,
     mode: str = "usb",
     port: str = "",
@@ -304,7 +529,7 @@ def flash_firmware(
     log_cb=None,
     progress_cb=None,
 ):
-    if mode not in ("usb", "ttl"):
+    if mode not in ("usb", "ttl", "native_usb"):
         raise ValueError("bad mode")
 
     if not os.path.isfile(firmware_path):
@@ -315,7 +540,7 @@ def flash_firmware(
             port = auto_pick_port(vid, pid)
             if not port:
                 raise RuntimeError(f"no port for vid=0x{vid:04x} pid=0x{pid:04x}")
-        else:
+        elif mode == "ttl":
             raise RuntimeError("ttl mode requires --port (no vid/pid filtering)")
 
     fw = open(firmware_path, "rb").read()
@@ -329,9 +554,35 @@ def flash_firmware(
         raise RuntimeError("bad parity")
     parity_v = parity_map[parity]
 
+    fast_active = False
+
+    def _fast_txrx(isp_obj, pkt, expect_cmd, timeout_s):
+        try:
+            return isp_obj.txrx(pkt, expect_cmd, timeout_s)
+        except Exception as e:
+            if mode == "ttl" and fast_active:
+                try:
+                    isp_obj.close()
+                except Exception:
+                    pass
+                raise FastBaudFallback(str(e)) from e
+            raise
+
+    def _transfer_fail(isp_obj, msg):
+        try:
+            isp_obj.close()
+        except Exception:
+            pass
+        if mode == "ttl" and fast_active:
+            raise FastBaudFallback(msg)
+        raise RuntimeError(msg)
+
     t0 = time.monotonic()
-    isp = WchIsp(port, baud, parity_v, trace)
-    isp.open()
+    if mode == "native_usb":
+        isp = WchIspUsb(trace)
+    else:
+        isp = WchIsp(port, baud, parity_v, trace)
+        isp.open()
 
     identify_pkt = build_identify(BMCU_DEVICE_ID, BMCU_DEVICE_TYPE)
 
@@ -343,8 +594,10 @@ def flash_firmware(
             isp.close()
             raise RuntimeError("autodi failed (usb mode)")
         _log(log_cb, "INFO", f"autodi ok boot_is_dtr={int(autodi[0])} boot_assert={int(autodi[1])} reset_assert={int(autodi[2])}")
+    elif mode == "ttl":
+        _log(log_cb, "ACTION", "ttl mode: enter bootloader now: disconnect USB, hold BOOT, connect USB, release BOOT when the BMCU board LED lights. waiting for ISP...")
     else:
-        _log(log_cb, "ACTION", "ttl mode: enter bootloader now (hold BOOT, tap RESET). waiting for ISP...")
+        _log(log_cb, "ACTION", "native_usb mode: disconnect 24V and connect the native USB port only. waiting for WCH ISP...")
 
     _log(log_cb, "INFO", f"stage identify @ host_baud={isp.baud}")
 
@@ -364,6 +617,25 @@ def flash_firmware(
             if time.monotonic() >= end:
                 isp.close()
                 raise RuntimeError(f"identify failed (ttl). enter bootloader first. last={last_err}")
+            time.sleep(0.15)
+    elif mode == "native_usb":
+        end = time.monotonic() + 12.0
+        last_err = None
+        while True:
+            try:
+                isp.close()
+                isp.open()
+                isp.flush()
+                code, data = isp.txrx(identify_pkt, CMD_IDENTIFY, 1.0)
+                if code == 0x00 and len(data) >= 2:
+                    _log(log_cb, "INFO", "bootloader detected (USB ISP active)")
+                    break
+                last_err = RuntimeError("identify bad response")
+            except Exception as e:
+                last_err = e
+            if time.monotonic() >= end:
+                isp.close()
+                raise RuntimeError(f"identify failed (native_usb). last={last_err}")
             time.sleep(0.15)
     else:
         code, data = isp.txrx(identify_pkt, CMD_IDENTIFY, 1.0)
@@ -453,7 +725,7 @@ def flash_firmware(
                 isp.close()
                 raise RuntimeError(f"identify failed (usb) after isp_end(01). last={last_err}")
             time.sleep(0.10)
-    else:
+    elif mode == "ttl":
         _log(log_cb, "ACTION", "ttl: re-enter bootloader now (hold BOOT, tap RESET). waiting for ISP...")
         end = time.monotonic() + 12.0
         last_err = None
@@ -469,6 +741,25 @@ def flash_firmware(
             if time.monotonic() >= end:
                 isp.close()
                 raise RuntimeError(f"identify failed (ttl) after isp_end(01). last={last_err}")
+            time.sleep(0.15)
+    else:
+        _log(log_cb, "ACTION", "native_usb: option bytes applied, waiting for USB ISP to re-enumerate...")
+        end = time.monotonic() + 12.0
+        last_err = None
+        while True:
+            try:
+                isp.close()
+                isp.open()
+                isp.flush()
+                code2, data2 = isp.txrx(identify_pkt, CMD_IDENTIFY, 1.0)
+                if code2 == 0x00 and len(data2) >= 2:
+                    break
+                last_err = RuntimeError("identify bad response")
+            except Exception as e:
+                last_err = e
+            if time.monotonic() >= end:
+                isp.close()
+                raise RuntimeError(f"identify failed (native_usb) after isp_end(01). last={last_err}")
             time.sleep(0.15)
 
     _log(log_cb, "INFO", "bootloader detected again (after isp_end(01))")
@@ -587,15 +878,37 @@ def flash_firmware(
         isp.close()
         raise RuntimeError(f"erase incomplete (tail not erased) addr=0x{tail_addr:08x}")
 
-    if not no_fast:
+    if not no_fast and mode != "native_usb":
         _log(log_cb, "INFO", f"stage set_baud mcu={fast_baud}")
-        code, _ = isp.txrx(build_set_baud(int(fast_baud)), CMD_SET_BAUD, 1.2)
+        try:
+            code, _ = isp.txrx(build_set_baud(int(fast_baud)), CMD_SET_BAUD, 1.2)
+        except Exception as e:
+            if mode == "ttl" and int(fast_baud) != int(baud):
+                try:
+                    isp.close()
+                except Exception:
+                    pass
+                raise FastBaudFallback(f"set_baud: {e}") from e
+            raise
         if code != 0x00:
+            if mode == "ttl" and int(fast_baud) != int(baud):
+                isp.close()
+                raise FastBaudFallback("set_baud failed")
             isp.close()
             raise RuntimeError("set_baud failed")
         time.sleep(0.03)
-        isp.set_baud(int(fast_baud))
-        isp.flush()
+        try:
+            isp.set_baud(int(fast_baud))
+            isp.flush()
+        except Exception as e:
+            if mode == "ttl" and int(fast_baud) != int(baud):
+                try:
+                    isp.close()
+                except Exception:
+                    pass
+                raise FastBaudFallback(f"host set_baud: {e}") from e
+            raise
+        fast_active = (mode == "ttl" and int(fast_baud) != int(baud))
         _log(log_cb, "INFO", f"set_baud ok host_baud={isp.baud}")
 
     pad_byte = 0x00
@@ -613,10 +926,9 @@ def flash_firmware(
         plain = fw_pad[addr:addr+BMCU_CHUNK]
         enc = xor_crypt(plain, xor_key)
 
-        code, _ = isp.txrx(build_program(addr, pad_byte, enc), CMD_PROGRAM, 5.0)
+        code, _ = _fast_txrx(isp, build_program(addr, pad_byte, enc), CMD_PROGRAM, 5.0)
         if code != 0x00:
-            isp.close()
-            raise RuntimeError(f"program failed at 0x{addr:08x}")
+            _transfer_fail(isp, f"program failed at 0x{addr:08x}")
 
         stage_pct = (i + 1) * 100 // blocks
         ui_pct = (i + 1) * 50 // blocks
@@ -632,24 +944,22 @@ def flash_firmware(
 
     flush_addr = blocks * BMCU_CHUNK
     _log(log_cb, "INFO", f"stage program_flush addr=0x{flush_addr:08x} (A5 empty)")
-    code, _ = isp.txrx(build_program(flush_addr, pad_byte, b""), CMD_PROGRAM, 5.0)
+    code, _ = _fast_txrx(isp, build_program(flush_addr, pad_byte, b""), CMD_PROGRAM, 5.0)
     if code != 0x00:
-        isp.close()
-        raise RuntimeError("program_flush failed")
+        _transfer_fail(isp, "program_flush failed")
 
     if progress_cb:
         progress_cb(50, blocks, blocks)
 
-    dt = time.monotonic() - tprog
+    dt = max(time.monotonic() - tprog, 1e-6)
     kb = len(fw) / 1024.0
     _log(log_cb, "INFO", f"program done in {dt:.3f}s ({kb/dt:.1f} KiB/s)")
 
     if verify:
         _log(log_cb, "INFO", "stage isp_key (A3) before verify")
-        code, kresp2 = isp.txrx(build_isp_key(seed), CMD_ISP_KEY, 1.2)
+        code, kresp2 = _fast_txrx(isp, build_isp_key(seed), CMD_ISP_KEY, 1.2)
         if code != 0x00 or len(kresp2) < 1 or ((kresp2[0] & 0xFF) != boot_sum):
-            isp.close()
-            raise RuntimeError("isp_key before verify failed")
+            _transfer_fail(isp, "isp_key before verify failed")
 
         verify_indices = []
         for i in range(blocks):
@@ -673,10 +983,9 @@ def flash_firmware(
                 plain = fw_pad[addr:addr+BMCU_CHUNK]
                 enc = xor_crypt(plain, xor_key)
 
-                code, _ = isp.txrx(build_verify(addr, pad_byte, enc), CMD_VERIFY, 1.8)
+                code, _ = _fast_txrx(isp, build_verify(addr, pad_byte, enc), CMD_VERIFY, 1.8)
                 if code != 0x00:
-                    isp.close()
-                    raise RuntimeError(f"verify failed at 0x{addr:08x}")
+                    _transfer_fail(isp, f"verify failed at 0x{addr:08x}")
 
                 stage_pct = (j + 1) * 100 // vtotal
                 ui_pct = 50 + ((j + 1) * 50 // vtotal)
@@ -704,12 +1013,53 @@ def flash_firmware(
         pulse_reset(isp, autodi[0], autodi[2])
 
     isp.close()
+    if mode == "native_usb":
+        _log(log_cb, "ACTION", "done. disconnect USB, reconnect 24V power, then let BMCU calibrate normally")
     if progress_cb:
         progress_cb(100, blocks, blocks)
     _log(log_cb, "INFO", f"OK total={time.monotonic()-t0:.3f}s")
 
+def flash_firmware(
+    firmware_path: str,
+    mode: str = "usb",
+    port: str = "",
+    vid: int = DEFAULT_VID,
+    pid: int = DEFAULT_PID,
+    flash_kb: int = 64,
+    baud: int = 115200,
+    fast_baud: int = 1000000,
+    no_fast: bool = False,
+    verify: bool = True,
+    verify_every: int = 1,
+    verify_last: bool = False,
+    seed_len: int = 0x1E,
+    seed_random: bool = False,
+    parity: str = "N",
+    trace: bool = False,
+    log_cb=None,
+    progress_cb=None,
+):
+    kwargs = dict(
+        firmware_path=firmware_path, mode=mode, port=port, vid=vid, pid=pid,
+        flash_kb=flash_kb, baud=baud, fast_baud=fast_baud, no_fast=no_fast,
+        verify=verify, verify_every=verify_every, verify_last=verify_last,
+        seed_len=seed_len, seed_random=seed_random, parity=parity, trace=trace,
+        log_cb=log_cb, progress_cb=progress_cb,
+    )
+    try:
+        return _flash_firmware_once(**kwargs)
+    except FastBaudFallback as e:
+        if mode != "ttl" or no_fast or int(fast_baud) == int(baud):
+            raise
+        _log(log_cb, "WARN", f"TTL fast baud {fast_baud} failed ({e}). Retrying the full flash at {baud} baud.")
+        _log(log_cb, "ACTION", "TTL fallback: keep/put BMCU in bootloader mode when prompted. The flash will restart from the beginning at normal speed.")
+        if progress_cb:
+            progress_cb(0, 0, 0)
+        kwargs["no_fast"] = True
+        return _flash_firmware_once(**kwargs)
+
 def _http_get(url: str, timeout_s: float = 20.0) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.4"})
     with urllib.request.urlopen(req, timeout=timeout_s, context=_get_ssl_context()) as r:
         return r.read()
 
@@ -732,10 +1082,79 @@ def remote_get_version(version_url: str = REMOTE_VERSION_URL, timeout_s: float =
     minor_raw = int(b2)
 
     if minor_raw == 0:
-        return f"V{major}"
+        return f"V{major}.0"
     if (minor_raw % 10) == 0:
         return f"V{major}.{minor_raw // 10}"
     return f"V{major}.{minor_raw}"
+
+def remote_get_klipper_version(version_url: str = KLIPPER_VERSION_URL, timeout_s: float = 12.0) -> str:
+    b = _http_get(version_url, timeout_s=timeout_s)
+    text = b.decode("utf-8", "replace")
+    for raw in text.splitlines():
+        raw = raw.strip()
+        if raw.lower().startswith("firmware="):
+            v = raw.split("=", 1)[1].strip()
+            if v:
+                return v if v.lower().startswith("v") else f"V{v}"
+    raise RuntimeError("Klipper firmware version not found")
+
+
+def remote_download_klipper_firmware(
+    cache_dir: str,
+    firmware_url: str = KLIPPER_FIRMWARE_URL,
+    version_url: str = KLIPPER_VERSION_URL,
+    timeout_s: float = 40.0,
+    log_cb=None,
+    progress_cb=None,
+):
+    ver = remote_get_klipper_version(version_url=version_url, timeout_s=12.0)
+    _log(log_cb, "INFO", f"online: Klipper firmware version={ver}")
+    os.makedirs(cache_dir, exist_ok=True)
+    safe_ver = "".join(c if c.isalnum() or c in ".-_" else "_" for c in ver)
+    out_path = os.path.join(cache_dir, f"klipper-{safe_ver}.bin")
+    tmp_path = out_path + ".part"
+    req = urllib.request.Request(firmware_url, headers={"User-Agent": "BMCUFlasher/1.4"})
+    size = 0
+    h = hashlib.sha256()
+    last_pct = -1
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s, context=_get_ssl_context()) as r, open(tmp_path, "wb") as f:
+            total = None
+            try:
+                total = int(r.headers.get("Content-Length") or 0) or None
+            except Exception:
+                total = None
+            while True:
+                chunk = r.read(64 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                size += len(chunk)
+                h.update(chunk)
+                if progress_cb and total:
+                    pct = min(100, int(size * 100 / total))
+                    if pct != last_pct:
+                        last_pct = pct
+                        progress_cb(pct, 0, 0)
+    except Exception:
+        try:
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
+    if size <= 0:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise RuntimeError("online: empty Klipper firmware")
+    os.replace(tmp_path, out_path)
+    _log(log_cb, "INFO", f"online: Klipper firmware ok size={size} sha256={h.hexdigest()}")
+    if progress_cb:
+        progress_cb(100, 0, 0)
+    return out_path, ver
+
 
 def remote_parse_manifest(text: str) -> dict:
     m = {}
@@ -824,7 +1243,7 @@ def remote_download_firmware(
     size = 0
     last_pct = -1
 
-    req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "BMCUFlasher/1.4"})
     try:
         with urllib.request.urlopen(req, timeout=timeout_s, context=_get_ssl_context()) as r, open(tmp_path, "wb") as f:
             clen = r.headers.get("Content-Length")
@@ -881,7 +1300,7 @@ def remote_download_firmware(
 def main():
     ap = argparse.ArgumentParser(prog="bmcu_flasher.py")
     ap.add_argument("firmware")
-    ap.add_argument("--mode", choices=["usb", "ttl"], default="usb")
+    ap.add_argument("--mode", choices=["usb", "ttl", "native_usb"], default="usb")
     ap.add_argument("--port", default="")
     ap.add_argument("--vid", type=lambda x: int(x, 0), default=DEFAULT_VID)
     ap.add_argument("--pid", type=lambda x: int(x, 0), default=DEFAULT_PID)
@@ -908,6 +1327,14 @@ def main():
     args = ap.parse_args()
 
     if args.list:
+        if args.mode == "native_usb":
+            devs = list_usb_isp_devices()
+            if not devs:
+                print("no WCH ISP USB devices")
+                return
+            for d in devs:
+                print(d)
+            return
         if args.mode == "usb":
             ports = list_matching_ports(args.vid, args.pid)
         else:

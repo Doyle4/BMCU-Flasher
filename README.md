@@ -1,35 +1,14 @@
-<h1 align="center">Support</h1>
-
-<p align="center">
-  Bambu Lab continues tightening compatibility around BMCU, and there is a growing risk that BMCU may eventually become unusable in that ecosystem.
+<p align="center">If BMCU Flasher or my other open-source projects are useful to you and you would like to support further development:
 </p>
 
 <p align="center">
-  To prepare for that, I want to build BMCU support for open-source Klipper-based printers.
-</p>
-
-<p align="center">
-  I am currently raising funds to buy a test printer for this work.
-</p>
-
-<p align="center">
-  The $500 goal does not need to be reached in full. If I manage to save the remaining amount myself, I will cover the rest out of my own pocket.
-</p>
-
-<p align="center">
-  <a href="https://ko-fi.com/jarczakpawel/goal?g=0">
-    <img src="./banner-klipper.png" alt="Want BMCU on Klipper? Click the links below to support development." width="460">
+  <a href="https://ko-fi.com/jarczakpawel">
+    <img src="https://img.shields.io/badge/Support_on-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support on Ko-fi">
   </a>
-</p>
-
-<p align="center">
-  <a href="https://ko-fi.com/jarczakpawel/goal?g=0"><strong>Support on Ko-fi</strong></a>
-  ·
-  <a href="https://revolut.me/paweqxdkx"><strong>Support via Revolut</strong></a>
-</p>
-
-<p align="center">
-  Direct Revolut support avoids Ko-fi fees, so more of your contribution goes directly to the project.
+  &nbsp;
+  <a href="https://revolut.me/paweqxdkx">
+    <img src="https://img.shields.io/badge/Support_via-Revolut-191C1F?style=for-the-badge" alt="Support via Revolut">
+  </a>
 </p>
 
 # BMCU Flasher
@@ -41,11 +20,14 @@ Cross-platform flasher for BMCU (WCH ISP protocol).
 - OS: Linux / Windows / macOS / Android
 - Modes:
   - USB (BMCU with CH340 on board, AutoDI)
-  - TTL (pin header / external USB-Serial, manual BOOT + RESET)
+  - Native USB (Toaiot BMCU built-in USB, no CH340)
+  - TTL (pin header / external USB-Serial, manual BOOT entry)
 - Android:
   - USB (CH340 + USB OTG)
-  - TTL (external USB-Serial, manual BOOT + RESET)
-  - Online flash only (no local .bin picker)
+  - Native USB (Toaiot built-in USB + USB OTG)
+  - TTL (external USB-Serial, manual BOOT entry)
+  - Online Bambu / Klipper firmware selection
+  - Local .bin file flashing
   - App language follows system language
 
 ## Download
@@ -65,39 +47,71 @@ Legacy / experimental / community (older OS, best-effort):
 - macOS Catalina 10.15 (Intel): BMCU-Flasher-catalina-1.2.1.zip (community build by Doyle4, tested on Catalina)
 - macOS legacy try (CI attempt): BMCU-Flasher-macos-x86_64-legacy-try.zip (may not run on Catalina)
 
+## Run from source
+Install the Python dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Then start the GUI:
+
+```bash
+python bmcu_flasher_gui.py
+```
+
+On some Linux distributions, Tkinter may need to be installed separately (for example `python3-tk` on Debian/Ubuntu).
+
 ## Android requirements
 - Android 5.0+ (API 21+) (minSdk=21)
 - USB OTG + USB host mode
 - CH340 supported for USB mode
+- Toaiot Native USB supported through the CH32V203 USB ISP bootloader
 - External USB-Serial adapters supported for TTL mode
+- TTL automatically retries the full flash at 115200 baud if the fast transfer fails
 - Do NOT plug USB or flash while BMCU is connected to the printer
 
 ## Firmware
-Latest BMCU firmware:
-https://github.com/jarczakpawel/BMCU-C-PJARCZAK
+Latest firmware:
+- Bambu: https://github.com/jarczakpawel/BMCU-C-PJARCZAK
+- Klipper: https://github.com/jarczakpawel/BMCU-Klipper
 
-GUI has "Online" firmware selection (no manual searching/downloading):
-- choose mode (Standard / Soft load / High force)
-- choose slot (SOLO / AMS_A / AMS_B / AMS_C / AMS_D)
-- choose retract length, AUTOLOAD, RGB
-- the app downloads the selected firmware and flashes it
+GUI has "Online" firmware selection:
+- choose Bambu or Klipper
+- Bambu: choose mode, AMS_AUTO (recommended) / legacy AMS_A-D, retract length, AUTOLOAD and RGB
+- Klipper: the latest single firmware.bin is downloaded automatically
+- both desktop and Android can also flash a local .bin file
 
 ## Drivers (CH340)
 In USB mode (CH340), drivers may be required on Windows.
 Linux and macOS usually work out-of-the-box.
 
+## TTL bootloader entry
+For the initial TTL bootloader entry:
+- Disconnect the USB cable from the USB-Serial adapter/BMCU.
+- Hold the BOOT button.
+- While holding BOOT, connect the USB cable.
+- Release BOOT only when the LED on the BMCU main board lights up.
+
+If the flasher later asks you to re-enter the bootloader during the same flash:
+- Keep USB connected.
+- Hold BOOT.
+- Tap RESET once.
+- Release BOOT.
+
+TTL is wired as RX/TX crossed, 3V3 to 3V3 and GND to GND. Do not connect 24V while flashing through the TTL adapter.
+
 ## Usage
 GUI (recommended):
 - Run the app
 - Click "Online" to pick the exact firmware variant (mode / slot / retract / autoload / RGB)
-- Click "Help" inside the app (wiring + BOOT/RESET steps)
+- Click "Help" inside the app (wiring + bootloader steps)
 
 Android:
 - Install APK
-- Choose USB or TTL mode
-- USB mode: plug BMCU via USB OTG
-- TTL mode: connect external USB-Serial adapter and enter BOOTloader manually
-- Select firmware options
+- Choose USB, Native USB or TTL mode
+- Choose Online or a local .bin file
+- Online: choose Bambu or Klipper
 - Click "Flash"
 
 CLI (optional):
@@ -105,10 +119,17 @@ CLI (optional):
 ```bash
 python3 bmcu_flasher.py firmware.bin --mode usb
 ```
-- TTL (manual BOOT+RESET, port required):
+- TTL (manual bootloader entry, port required):
 ```bash
   python3 bmcu_flasher.py firmware.bin --mode ttl --port /dev/ttyUSB0
 ```
+- Native USB (Toaiot built-in USB, no serial port):
+```bash
+  python3 bmcu_flasher.py firmware.bin --mode native_usb
+```
+
+## Credits
+Native USB support is based on the implementation and hardware testing from the Toaiot BMCU-Flasher fork.
 
 ## License
 MIT - see LICENSE.

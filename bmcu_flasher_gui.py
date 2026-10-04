@@ -17,9 +17,10 @@ if SCRIPT_DIR not in sys.path:
 import bmcu_flasher
 
 APP_NAME = "BMCU Flasher"
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 
 FW_URL = "https://github.com/jarczakpawel/BMCU-C-PJARCZAK"
+KLIPPER_URL = "https://github.com/jarczakpawel/BMCU-Klipper"
 APP_URL = "https://github.com/jarczakpawel/BMCU-Flasher"
 WCH_CH341SER_URL = "https://www.wch-ic.com/downloads/ch341ser_exe.html"
 
@@ -40,13 +41,17 @@ ONLINE_FORCE_STD = "standard"
 ONLINE_FORCE_SOFT = "soft"
 ONLINE_FORCE_HF = "high_force"
 
-ONLINE_SLOT_SOLO = "SOLO"
+ONLINE_PRODUCT_BAMBU = "bambu"
+ONLINE_PRODUCT_KLIPPER = "klipper"
+
+ONLINE_SLOT_AUTO = "AMS_AUTO"
 ONLINE_SLOT_A = "AMS_A"
 ONLINE_SLOT_B = "AMS_B"
 ONLINE_SLOT_C = "AMS_C"
 ONLINE_SLOT_D = "AMS_D"
 
 ONLINE_RETRACTS = [
+    ("9.5cm", "0.095f"),
     ("10cm", "0.10f"),
     ("20cm", "0.20f"),
     ("25cm", "0.25f"),
@@ -145,10 +150,13 @@ def _detect_os_lang():
             loc = None
     if not loc:
         return "EN"
-    loc = str(loc).lower()
-    if loc.startswith("pl"):
-        return "PL"
-    return "EN"
+
+    # Match the OS language against any translation shipped in i18n/.
+    # Locale examples: pl_PL, uk_UA, pt_BR, ja_JP, zh_CN.
+    raw = str(loc).split(".", 1)[0].replace("-", "_").split("_", 1)[0].lower()
+    aliases = {"ja": "JP"}
+    code = aliases.get(raw, raw.upper())
+    return code if code in _available_langs() else "EN"
 
 def _load_lang(lang: str):
     p = os.path.join(_i18n_dir(), f"{lang.lower()}.json")
@@ -181,7 +189,7 @@ class App(tk.Tk):
         self._load_i18n()
 
         self.var_mode = tk.StringVar(value=self.cfg.get("mode", "usb") or "usb")
-        if self.var_mode.get() not in ("usb", "ttl"):
+        if self.var_mode.get() not in ("usb", "ttl", "native_usb"):
             self.var_mode.set("usb")
 
         self.var_vid = tk.StringVar(value=self.cfg.get("vid", "0x1a86"))
@@ -219,6 +227,11 @@ class App(tk.Tk):
 
         self._row_adapter_lbl = None
         self._row_adapter_cell = None
+        self._row_port_lbl = None
+        self._row_port_cell = None
+        self._row_port_btns = None
+        self._nusb_row = None
+        self._nusb_status = None
 
         self.cmb_lang = None
         self.cmb_adapter = None
@@ -555,6 +568,7 @@ class App(tk.Tk):
         mode_box = ttk.Frame(cfg)
         mode_box.grid(row=r, column=1, sticky="w", pady=(0, 10))
         ttk.Radiobutton(mode_box, text=self.T("mode_usb"), variable=self.var_mode, value="usb", command=self._on_mode_change).pack(side="left")
+        ttk.Radiobutton(mode_box, text=self.T("mode_native_usb"), variable=self.var_mode, value="native_usb", command=self._on_mode_change).pack(side="left", padx=(18, 0))
         ttk.Radiobutton(mode_box, text=self.T("mode_ttl"), variable=self.var_mode, value="ttl", command=self._on_mode_change).pack(side="left", padx=(18, 0))
         r += 1
 
@@ -577,15 +591,25 @@ class App(tk.Tk):
         self.ent_pid.pack(side="left")
         r += 1
 
-        ttk.Label(cfg, text=self.T("port_label")).grid(row=r, column=0, sticky="w", pady=(0, 10))
-        self.cmb_ports = ttk.Combobox(cfg, textvariable=self.var_port_disp, state="readonly")
-        self.cmb_ports.grid(row=r, column=1, sticky="we", pady=(0, 10), ipady=4)
+        self._row_port_lbl = ttk.Label(cfg, text=self.T("port_label"))
+        self._row_port_lbl.grid(row=r, column=0, sticky="w", pady=(0, 10))
+        self._row_port_cell = ttk.Frame(cfg)
+        self._row_port_cell.grid(row=r, column=1, sticky="we", pady=(0, 10))
+        self.cmb_ports = ttk.Combobox(self._row_port_cell, textvariable=self.var_port_disp, state="readonly")
+        self.cmb_ports.pack(fill="x", ipady=4)
         self.cmb_ports.bind("<<ComboboxSelected>>", self._on_port_selected)
 
-        port_btns = ttk.Frame(cfg)
-        port_btns.grid(row=r, column=2, sticky="e", pady=(0, 10))
-        self.btn_refresh = ttk.Button(port_btns, text=self.T("refresh"), command=self._refresh_ports)
+        self._row_port_btns = ttk.Frame(cfg)
+        self._row_port_btns.grid(row=r, column=2, sticky="e", pady=(0, 10))
+        self.btn_refresh = ttk.Button(self._row_port_btns, text=self.T("refresh"), command=self._refresh_ports)
         self.btn_refresh.pack(side="left")
+
+        self._nusb_row = ttk.Frame(cfg)
+        self._nusb_row.grid(row=r, column=1, columnspan=2, sticky="we", pady=(0, 10))
+        self._nusb_status = tk.Label(self._nusb_row, bg=BG, fg=FG, anchor="w", justify="left", wraplength=650)
+        self._nusb_status.pack(side="left", fill="x", expand=True)
+        ttk.Button(self._nusb_row, text=self.T("refresh"), command=self._refresh_ports).pack(side="right", padx=(10, 0))
+        self._nusb_row.grid_remove()
         r += 1
 
         ttk.Label(cfg, text=self.T("firmware_label")).grid(row=r, column=0, sticky="w", pady=(0, 10))
@@ -608,7 +632,11 @@ class App(tk.Tk):
 
         ttk.Label(link_row, text=self.T("latest_fw_label")).grid(row=0, column=0, sticky="w")
         tk.Label(link_row, textvariable=self.var_remote_ver, bg=BG, fg=PB_GREEN, font=("TkDefaultFont", 11, "bold")).grid(row=0, column=1, sticky="w", padx=(8, 0))
-        self._link_label(link_row, FW_URL, FW_URL).grid(row=0, column=3, sticky="e")
+        links_fw = ttk.Frame(link_row)
+        links_fw.grid(row=0, column=3, sticky="e")
+        self._link_label(links_fw, "Bambu", FW_URL).pack(side="left")
+        tk.Label(links_fw, text="  |  ", bg=BG, fg=FG).pack(side="left")
+        self._link_label(links_fw, "Klipper", KLIPPER_URL).pack(side="left")
 
         warn_border = tk.Frame(mid, bg=WARN_RED)
         warn_border.pack(fill="x", pady=(0, 10))
@@ -729,9 +757,28 @@ class App(tk.Tk):
             self._force_ch340()
             self._set_row_visible(self._row_adapter_lbl, False)
             self._set_row_visible(self._row_adapter_cell, False)
+            self._set_row_visible(self._row_port_lbl, True)
+            self._set_row_visible(self._row_port_cell, True)
+            self._set_row_visible(self._row_port_btns, True)
+            if self._nusb_row is not None:
+                self._nusb_row.grid_remove()
+        elif mode == "native_usb":
+            self._set_row_visible(self._row_adapter_lbl, False)
+            self._set_row_visible(self._row_adapter_cell, False)
+            self._set_row_visible(self._row_port_lbl, False)
+            self._set_row_visible(self._row_port_cell, False)
+            self._set_row_visible(self._row_port_btns, False)
+            if self._nusb_row is not None:
+                self._nusb_row.grid()
+            self._refresh_nusb_status()
         else:
             self._set_row_visible(self._row_adapter_lbl, True)
             self._set_row_visible(self._row_adapter_cell, True)
+            self._set_row_visible(self._row_port_lbl, True)
+            self._set_row_visible(self._row_port_cell, True)
+            self._set_row_visible(self._row_port_btns, True)
+            if self._nusb_row is not None:
+                self._nusb_row.grid_remove()
             if not init:
                 name = (self.var_adapter.get() or "").strip()
                 self._apply_adapter_presets(name, save=True)
@@ -756,10 +803,14 @@ class App(tk.Tk):
     def _fetch_remote_version(self):
         def worker():
             try:
-                ver = bmcu_flasher.remote_get_version()
+                bambu = bmcu_flasher.remote_get_version()
             except Exception:
-                ver = ""
-            self.q.put(("ver", ver))
+                bambu = "?"
+            try:
+                klipper = bmcu_flasher.remote_get_klipper_version()
+            except Exception:
+                klipper = "?"
+            self.q.put(("ver", bambu, klipper))
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_tree_menu(self, ev):
@@ -1028,12 +1079,15 @@ class App(tk.Tk):
                     self.btn_flash.config(state="normal")
                     self._ttl_hint_hide()
                     if ok:
-                        messagebox.showinfo(APP_NAME, self.T("ok"))
+                        if self.var_mode.get() == "native_usb":
+                            messagebox.showinfo(APP_NAME, self.T("flash_done_nusb"))
+                        else:
+                            messagebox.showinfo(APP_NAME, self.T("ok"))
                     else:
                         messagebox.showerror(APP_NAME, msg or self.T("err_generic"))
                 elif ev[0] == "ver":
-                    _, ver = ev
-                    self.var_remote_ver.set(ver or "")
+                    _, bambu, klipper = ev
+                    self.var_remote_ver.set(f"Bambu: {bambu or '?'}  |  Klipper: {klipper or '?'}")
         except queue.Empty:
             pass
         self.after(50, self._drain_events)
@@ -1089,10 +1143,31 @@ class App(tk.Tk):
             return ps, False
         return [], True
 
+    def _refresh_nusb_status(self):
+        if self._nusb_status is None:
+            return
+        try:
+            devs = bmcu_flasher.list_usb_isp_devices()
+        except Exception as e:
+            devs = []
+            self._enqueue_log("WARN", f"native usb probe failed: {e}")
+        if devs:
+            self._nusb_status.config(text=self.T("nusb_status_ok").format(dev=devs[0]), fg=PB_GREEN)
+        else:
+            self._nusb_status.config(text=self.T("nusb_status_none"), fg=WARN_RED)
+
     def _refresh_ports(self):
         mode = self.var_mode.get()
         ports = []
         fallback = False
+
+        if mode == "native_usb":
+            self.var_port.set("")
+            self.var_port_disp.set("")
+            self._refresh_nusb_status()
+            self.cfg["mode"] = mode
+            _cfg_save(self.cfg)
+            return
 
         if mode == "usb":
             try:
@@ -1178,7 +1253,7 @@ class App(tk.Tk):
         w = tk.Toplevel(self)
         w.title(self.T("online_title"))
         w.configure(bg=BG)
-        w.minsize(780, 560)
+        w.minsize(780, 650)
         w.transient(self)
         w.grab_set()
 
@@ -1199,11 +1274,25 @@ class App(tk.Tk):
             ONLINE_FORCE_SOFT: self.T("online_force_soft_desc"),
             ONLINE_FORCE_HF: self.T("online_force_hf_desc"),
         }
+        product_items = [
+            (ONLINE_PRODUCT_BAMBU, "Bambu"),
+            (ONLINE_PRODUCT_KLIPPER, "Klipper"),
+        ]
+        slot_items = [
+            (ONLINE_SLOT_AUTO, self.T("online_slot_auto")),
+            (ONLINE_SLOT_A, ONLINE_SLOT_A),
+            (ONLINE_SLOT_B, ONLINE_SLOT_B),
+            (ONLINE_SLOT_C, ONLINE_SLOT_C),
+            (ONLINE_SLOT_D, ONLINE_SLOT_D),
+        ]
 
+        var_product = tk.StringVar(value=ONLINE_PRODUCT_BAMBU)
+        var_product_disp = tk.StringVar(value="Bambu")
         var_force = tk.StringVar(value=ONLINE_FORCE_STD)
         var_force_disp = tk.StringVar(value=force_label_map[ONLINE_FORCE_STD])
         var_force_desc = tk.StringVar(value=force_desc_map[ONLINE_FORCE_STD])
-        var_slot = tk.StringVar(value=ONLINE_SLOT_SOLO)
+        var_slot = tk.StringVar(value=ONLINE_SLOT_AUTO)
+        var_slot_disp = tk.StringVar(value=self.T("online_slot_auto"))
         var_retract = tk.StringVar(value="9.5cm")
         var_autoload = tk.BooleanVar(value=True)
         var_rgb = tk.BooleanVar(value=True)
@@ -1225,21 +1314,47 @@ class App(tk.Tk):
             var_force.set(force)
             var_force_desc.set(force_desc_map.get(force, ""))
 
-        def _retract_values_for_slot(slot: str):
-            if slot == ONLINE_SLOT_SOLO:
-                xs = ["9.5cm"]
-                xs += [cm for cm, _ in ONLINE_RETRACTS]
-                return xs
-            return [cm for cm, _ in ONLINE_RETRACTS]
-
         def _on_slot_change(_ev=None):
-            vals = _retract_values_for_slot(var_slot.get())
+            disp = var_slot_disp.get()
+            slot = ONLINE_SLOT_AUTO
+            for code, label in slot_items:
+                if label == disp:
+                    slot = code
+                    break
+            var_slot.set(slot)
+            vals = [cm for cm, _ in ONLINE_RETRACTS]
             cmb_retract["values"] = vals
-            cur = var_retract.get()
-            if cur not in vals:
+            if var_retract.get() not in vals:
                 var_retract.set(vals[0])
 
+        def _on_product_change(_ev=None):
+            disp = var_product_disp.get()
+            product = ONLINE_PRODUCT_BAMBU
+            for code, label in product_items:
+                if label == disp:
+                    product = code
+                    break
+            var_product.set(product)
+            if product == ONLINE_PRODUCT_BAMBU:
+                bambu_box.grid()
+                klipper_box.grid_remove()
+            else:
+                bambu_box.grid_remove()
+                klipper_box.grid()
+
         def _pick():
+            product = var_product.get()
+            if product == ONLINE_PRODUCT_KLIPPER:
+                display = "[ONLINE] Klipper firmware"
+                self.var_fw_source.set("online")
+                self._online_sel = {"product": ONLINE_PRODUCT_KLIPPER, "display": display}
+                self.var_fw.set(display)
+                self.cfg["fw_source"] = "online"
+                self.cfg["online_sel"] = self._online_sel
+                _cfg_save(self.cfg)
+                w.destroy()
+                return
+
             force = var_force.get()
             slot = var_slot.get()
             retract_disp = var_retract.get()
@@ -1256,113 +1371,92 @@ class App(tk.Tk):
             dm_dir = "AUTOLOAD" if autoload else "NO_AUTOLOAD"
             rgb_dir = "FILAMENT_RGB_ON" if rgb else "FILAMENT_RGB_OFF"
 
-            retract_val = None
-            if retract_disp == "9.5cm":
-                retract_val = "0.095f"
-            else:
-                for cm_disp, val in ONLINE_RETRACTS:
-                    if cm_disp == retract_disp:
-                        retract_val = val
-                        break
+            retract_val = next((val for cm, val in ONLINE_RETRACTS if cm == retract_disp), None)
             if not retract_val:
                 messagebox.showerror(APP_NAME, self.T("err_bad_retract"))
                 return
 
-            slot_dir = slot
-            file_slot = slot
-
-            if slot == ONLINE_SLOT_SOLO:
-                if retract_val == "0.095f":
-                    slot_dir = "SOLO"
-                    file_name = "solo_0.095f.bin"
-                    file_slot = "SOLO"
-                    ret_cm = "9.5cm"
-                else:
-                    slot_dir = "AMS_A"
-                    file_slot = "AMS_A"
-                    file_name = f"ams_a_{retract_val}.bin"
-                    ret_cm = retract_disp
+            if slot == ONLINE_SLOT_AUTO:
+                slot_dir = "AMS_AUTO"
+                file_name = f"ams_auto_{retract_val}.bin"
+                file_slot = "AMS_AUTO"
             else:
                 slot_dir = slot
-                s = slot.split("_", 1)[1].lower()
-                file_name = f"ams_{s}_{retract_val}.bin"
-                ret_cm = retract_disp
+                suffix = slot.split("_", 1)[1].lower()
+                file_name = f"ams_{suffix}_{retract_val}.bin"
+                file_slot = slot
+            ret_cm = retract_disp
 
             rel_path = f"{mode_dir}/{dm_dir}/{rgb_dir}/{slot_dir}/{file_name}"
-            display = f"[ONLINE] {file_slot} RET={ret_cm} AUTOLOAD={'ON' if autoload else 'OFF'} RGB={'ON' if rgb else 'OFF'} ({mode_dir})"
+            display = f"[ONLINE] Bambu {file_slot} RET={ret_cm} AUTOLOAD={'ON' if autoload else 'OFF'} RGB={'ON' if rgb else 'OFF'} ({mode_dir})"
 
             self.var_fw_source.set("online")
-            self._online_sel = {"rel_path": rel_path, "display": display}
+            self._online_sel = {"product": ONLINE_PRODUCT_BAMBU, "rel_path": rel_path, "display": display}
             self.var_fw.set(display)
-
             self.cfg["fw_source"] = "online"
             self.cfg["online_sel"] = self._online_sel
             _cfg_save(self.cfg)
-
             w.destroy()
 
         row = 1
-
-        b1, i1 = step_box(root, self.T("online_step1_title"))
-        b1.grid(row=row, column=0, sticky="we", pady=(0, 10))
+        bp, ip = step_box(root, self.T("online_product_title"))
+        bp.grid(row=row, column=0, sticky="we", pady=(0, 10))
         row += 1
+        tk.Label(ip, text=self.T("online_product_label"), bg=BG, fg=FG).grid(row=0, column=0, sticky="w")
+        cmb_product = ttk.Combobox(ip, textvariable=var_product_disp, state="readonly", values=[label for _, label in product_items])
+        cmb_product.grid(row=0, column=1, sticky="we", padx=(10, 0))
+        cmb_product.bind("<<ComboboxSelected>>", _on_product_change)
+        ip.columnconfigure(1, weight=1)
 
+        bambu_box = tk.Frame(root, bg=BG)
+        bambu_box.grid(row=row, column=0, sticky="we")
+        bambu_box.columnconfigure(0, weight=1)
+
+        b1, i1 = step_box(bambu_box, self.T("online_step1_title"))
+        b1.grid(row=0, column=0, sticky="we", pady=(0, 10))
         tk.Label(i1, text=self.T("online_force_label"), bg=BG, fg=FG).grid(row=0, column=0, sticky="w")
-        cmb_force = ttk.Combobox(
-            i1,
-            textvariable=var_force_disp,
-            state="readonly",
-            values=[label for _, label in force_items],
-        )
+        cmb_force = ttk.Combobox(i1, textvariable=var_force_disp, state="readonly", values=[label for _, label in force_items])
         cmb_force.grid(row=0, column=1, sticky="we", padx=(10, 0))
         cmb_force.bind("<<ComboboxSelected>>", _on_force_change)
         i1.columnconfigure(1, weight=1)
+        tk.Label(i1, textvariable=var_force_desc, bg=BG, fg=FG, justify="left", wraplength=720).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
-        tk.Label(
-            i1,
-            textvariable=var_force_desc,
-            bg=BG,
-            fg=FG,
-            justify="left",
-            wraplength=720,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        _on_force_change()
-
-        b2, i2 = step_box(root, self.T("online_step2_title"))
-        b2.grid(row=row, column=0, sticky="we", pady=(0, 10))
-        row += 1
-
+        b2, i2 = step_box(bambu_box, self.T("online_step2_title"))
+        b2.grid(row=1, column=0, sticky="we", pady=(0, 10))
         tk.Label(i2, text=self.T("online_slot_label"), bg=BG, fg=FG).grid(row=0, column=0, sticky="w")
-        cmb_slot = ttk.Combobox(i2, textvariable=var_slot, state="readonly", values=[ONLINE_SLOT_SOLO, ONLINE_SLOT_A, ONLINE_SLOT_B, ONLINE_SLOT_C, ONLINE_SLOT_D])
+        cmb_slot = ttk.Combobox(i2, textvariable=var_slot_disp, state="readonly", values=[label for _, label in slot_items])
         cmb_slot.grid(row=0, column=1, sticky="we", padx=(10, 0))
         cmb_slot.bind("<<ComboboxSelected>>", _on_slot_change)
-
         tk.Label(i2, text=self.T("online_retract_label"), bg=BG, fg=FG).grid(row=1, column=0, sticky="w", pady=(8, 0))
         cmb_retract = ttk.Combobox(i2, textvariable=var_retract, state="readonly")
         cmb_retract.grid(row=1, column=1, sticky="we", padx=(10, 0), pady=(8, 0))
         i2.columnconfigure(1, weight=1)
-
-        _on_slot_change()
         tk.Label(i2, text=self.T("online_retract_hint"), bg=BG, fg=FG, justify="left", wraplength=720).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
-        b3, i3 = step_box(root, self.T("online_step3_title"))
-        b3.grid(row=row, column=0, sticky="we", pady=(0, 10))
-        row += 1
-
+        b3, i3 = step_box(bambu_box, self.T("online_step3_title"))
+        b3.grid(row=2, column=0, sticky="we", pady=(0, 10))
         opts = tk.Frame(i3, bg=BG)
         opts.grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(opts, text=self.T("online_autoload"), variable=var_autoload).pack(side="left")
         ttk.Checkbutton(opts, text=self.T("online_rgb"), variable=var_rgb).pack(side="left", padx=(12, 0))
-
         tk.Label(i3, text=self.T("online_opts_hint"), bg=BG, fg=FG, justify="left", wraplength=720).grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        klipper_box = tk.Frame(root, bg=BG, highlightthickness=1, highlightbackground=BORDER)
+        klipper_box.grid(row=row, column=0, sticky="we", pady=(0, 10))
+        tk.Label(klipper_box, text=self.T("online_klipper_title"), bg=BG, fg=FG, font=("TkDefaultFont", 11, "bold")).pack(anchor="w", padx=12, pady=(10, 6))
+        tk.Label(klipper_box, text=self.T("online_klipper_desc"), bg=BG, fg=FG, justify="left", wraplength=720).pack(anchor="w", padx=12, pady=(0, 12))
+        klipper_box.grid_remove()
+        row += 1
 
         btns = tk.Frame(root, bg=BG)
         btns.grid(row=row, column=0, sticky="we", pady=(6, 0))
         btns.columnconfigure(0, weight=1)
-        tk.Button(btns, text=self.T("cancel"), command=w.destroy, bg=ENTRY_BG, fg=FG, relief="flat",
-                highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=1, sticky="e")
-        tk.Button(btns, text=self.T("select"), command=_pick, bg=ENTRY_BG, fg=FG, relief="flat",
-                highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=2, sticky="e", padx=(10, 0))
+        tk.Button(btns, text=self.T("cancel"), command=w.destroy, bg=ENTRY_BG, fg=FG, relief="flat", highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=1, sticky="e")
+        tk.Button(btns, text=self.T("select"), command=_pick, bg=ENTRY_BG, fg=FG, relief="flat", highlightthickness=1, highlightbackground=BORDER, padx=18, pady=8).grid(row=0, column=2, sticky="e", padx=(10, 0))
+
+        _on_force_change()
+        _on_slot_change()
+        _on_product_change()
 
     def _help_link(self, parent, label: str, url: str):
         row = tk.Frame(parent, bg=BG)
@@ -1410,6 +1504,10 @@ class App(tk.Tk):
         tk.Label(left, text=self.T("help_usb_s2"), bg=BG, fg=FG, justify="left").pack(anchor="w", padx=24)
         tk.Label(left, text=self.T("help_step3"), bg=BG, fg=FG, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=12, pady=(10, 0))
         tk.Label(left, text=self.T("help_usb_s3"), bg=BG, fg=FG, justify="left").pack(anchor="w", padx=24)
+
+        tk.Label(left, text=self.T("help_nusb_title"), bg=BG, fg=FG, font=("TkDefaultFont", 12, "bold")).pack(anchor="w", padx=12, pady=(16, 6))
+        tk.Label(left, text=self.T("help_nusb_s1"), bg=BG, fg=FG, justify="left", wraplength=400).pack(anchor="w", padx=24)
+        tk.Label(left, text=self.T("help_nusb_s2"), bg=BG, fg=FG, justify="left", wraplength=400).pack(anchor="w", padx=24, pady=(6, 0))
 
         tk.Label(right, text=self.T("help_ttl_title"), bg=BG, fg=FG, font=("TkDefaultFont", 12, "bold")).pack(anchor="w", padx=12, pady=(12, 6))
         tk.Label(right, text=self.T("help_step1"), bg=BG, fg=FG, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=12, pady=(6, 0))
@@ -1461,6 +1559,7 @@ class App(tk.Tk):
         links = tk.Frame(bottom, bg=BG)
         links.pack(anchor="w")
         self._help_link(links, self.T("help_link_fw"), FW_URL).pack(anchor="w", pady=2)
+        self._help_link(links, self.T("help_link_klipper"), KLIPPER_URL).pack(anchor="w", pady=2)
         self._help_link(links, self.T("help_link_app"), APP_URL).pack(anchor="w", pady=2)
 
         tk.Label(bottom, text=f"{APP_NAME} v{APP_VERSION} - {self.T('author_label')}", bg=BG, fg=FG).pack(anchor="w", pady=(10, 0))
@@ -1488,7 +1587,11 @@ class App(tk.Tk):
         fw_source = (self.var_fw_source.get() or "").strip() or "local"
 
         if fw_source == "online":
-            if not self._online_sel or not self._online_sel.get("rel_path"):
+            if not self._online_sel:
+                messagebox.showerror(APP_NAME, self.T("err_select_online"))
+                return
+            product = (self._online_sel.get("product") or ONLINE_PRODUCT_BAMBU).strip()
+            if product == ONLINE_PRODUCT_BAMBU and not self._online_sel.get("rel_path"):
                 messagebox.showerror(APP_NAME, self.T("err_select_online"))
                 return
         else:
@@ -1501,7 +1604,7 @@ class App(tk.Tk):
                 return
 
         port = (self.var_port.get() or "").strip()
-        if not port:
+        if not port and self.var_mode.get() != "native_usb":
             messagebox.showerror(APP_NAME, self.T("err_select_port"))
             return
 
@@ -1557,25 +1660,34 @@ class App(tk.Tk):
 
             if fw_source == "online":
                 sel = self._online_sel or {}
-                rel = (sel.get("rel_path") or "").strip()
-                if not rel:
-                    raise RuntimeError("online selection missing rel_path")
-
-                self._enqueue_log("INFO", f"online: selected {rel}")
+                product = (sel.get("product") or ONLINE_PRODUCT_BAMBU).strip()
                 self._enqueue_progress(0, 0, 0)
 
-                fw_path, ver = bmcu_flasher.remote_download_firmware(
-                    rel_path=rel,
-                    cache_dir=_cache_dir(),
-                    manifest_url=bmcu_flasher.REMOTE_MANIFEST_URL,
-                    firmware_base_url=bmcu_flasher.REMOTE_FIRMWARE_BASE,
-                    version_url=bmcu_flasher.REMOTE_VERSION_URL,
-                    timeout_s=40.0,
-                    log_cb=self._enqueue_log,
-                    progress_cb=lambda pct, _d, _t: self._enqueue_progress(pct, 0, 0),
-                )
-                online_cache_path = fw_path
+                if product == ONLINE_PRODUCT_KLIPPER:
+                    self._enqueue_log("INFO", "online: selected Klipper firmware")
+                    fw_path, ver = bmcu_flasher.remote_download_klipper_firmware(
+                        cache_dir=_cache_dir(),
+                        timeout_s=40.0,
+                        log_cb=self._enqueue_log,
+                        progress_cb=lambda pct, _d, _t: self._enqueue_progress(pct, 0, 0),
+                    )
+                else:
+                    rel = (sel.get("rel_path") or "").strip()
+                    if not rel:
+                        raise RuntimeError("online selection missing rel_path")
+                    self._enqueue_log("INFO", f"online: selected Bambu {rel}")
+                    fw_path, ver = bmcu_flasher.remote_download_firmware(
+                        rel_path=rel,
+                        cache_dir=_cache_dir(),
+                        manifest_url=bmcu_flasher.REMOTE_MANIFEST_URL,
+                        firmware_base_url=bmcu_flasher.REMOTE_FIRMWARE_BASE,
+                        version_url=bmcu_flasher.REMOTE_VERSION_URL,
+                        timeout_s=40.0,
+                        log_cb=self._enqueue_log,
+                        progress_cb=lambda pct, _d, _t: self._enqueue_progress(pct, 0, 0),
+                    )
 
+                online_cache_path = fw_path
                 self._enqueue_log("INFO", f"online: using {ver} ({os.path.basename(fw_path)})")
                 self._enqueue_progress(0, 0, 0)
             else:
